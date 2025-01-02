@@ -1,4 +1,4 @@
-activityID,locID,,
+activityID,locID,activityName,locName
 1,1,waterfront,waterfront
 2,2,tennis,upper courts
 2,3,tennis,middle courts
