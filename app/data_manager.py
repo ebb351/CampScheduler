@@ -23,7 +23,7 @@ class DataManager:
 
         try:
             df = pd.read_csv(file_path)
-            print(f"Loaded {file_name} successfully.")
+            # print(f"Loaded {file_name} successfully.")
             return df
         except Exception as e:
             raise ValueError(f"Error loading {file_name}: {e}")
@@ -59,7 +59,7 @@ class DataManager:
         missing_cols = [col for col in required_columns if col not in df.columns]
         if missing_cols:
             raise ValueError(f"Missing columns: {missing_cols}")
-        print("Validation passed.")
+        # print("Validation passed.")
 
     def validate_all(self):
         """
