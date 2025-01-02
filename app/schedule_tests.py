@@ -59,7 +59,33 @@ def test_group_activity_count(schedule_df, group_ids):
                 violations.append((group, time_slot, activity_count))
     return violations
 
-def run_tests(schedule, group_ids):
+def test_location_activity_match(schedule_df, loc_options_df):
+    """
+    Test that each activity is assigned to a valid location from locOptions
+    """
+    violations = []
+
+    # Create a set of valid (activityName, locName) pairs from locOptions
+    valid_pairs = set(
+        zip(loc_options_df["activityName"], loc_options_df["locName"])
+    )
+
+    # Check each row in the schedule
+    for _, row in schedule_df.iterrows():
+        activity_name = row["activity"]
+        location_name = row["location"]
+
+        # Check if the (activityName, locName) pair is valid
+        if (activity_name, location_name) not in valid_pairs:
+            violations.append({
+                "activity": activity_name,
+                "location": location_name,
+                "time_slot": row["time_slot"],
+                "group": row["group"]
+            })
+    return violations
+
+def run_tests(schedule, group_ids, location_options_df):
     """
     Run all test functions on the generated schedule.
     """
@@ -68,6 +94,7 @@ def run_tests(schedule, group_ids):
     print("Running Tests...")
     staff_violations = test_staff_non_overlap(schedule_df)
     location_violations = test_location_non_overlap(schedule_df)
+    location_activity_violations = test_location_activity_match(schedule_df, location_options_df)
     activity_violations = test_activity_exclusivity(schedule_df)
     group_violations = test_group_activity_count(schedule_df, group_ids)
 
@@ -81,6 +108,11 @@ def run_tests(schedule, group_ids):
         print("Location Non-Overlap Violations:", location_violations)
     else:
         print("Location Non-Overlap: PASSED")
+
+    if location_activity_violations:
+        print("Location Activity Match Violations:", location_activity_violations)
+    else:
+        print("Location Activity Match: PASSED")
 
     if activity_violations:
         print("Activity Exclusivity Violations:", activity_violations)
