@@ -3,7 +3,7 @@ from data_manager import DataManager
 from schedule_tests import run_tests
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, group_df, time_slots):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -15,8 +15,10 @@ class Scheduler:
         self.staff_df = staff_df
         self.activity_df = activity_df
         self.location_df = location_df
+        self.location_options_df = location_options_df
         self.group_df = group_df
         self.time_slots = time_slots
+
 
 
     def solve(self):
@@ -66,6 +68,21 @@ class Scheduler:
                 model.Add(
                     sum(y[l,j,k,g] for j in activity_ids for g in group_ids) <= 1
                 )
+
+        # Activities only take place in a valid location
+        # Create mapping of activityID to valid locationID
+        valid_locations = (
+            self.location_options_df.groupby("activityID")["locID"]
+            .apply(list)
+            .to_dict()
+        )
+        for g in group_ids:
+            for j in activity_ids:
+                for k in self.time_slots:
+                    valid_loc_vars = [y[l,j,k,g] for l in valid_locations.get(j, [])]
+                    model.Add(
+                        sum(valid_loc_vars) == sum(x[i,j,k,g] for i in staff_ids)
+                    )
 
         # Group-specific activity assignment (3-4 activities per time slot)
         for g in group_ids:
@@ -136,6 +153,7 @@ if __name__ == "__main__":
     staff_df = manager.get_dataframe("staff")
     activity_df = manager.get_dataframe("activity")
     location_df = manager.get_dataframe("location")
+    location_options_df = manager.get_dataframe("locOptions")
     group_df = manager.get_dataframe("groups")
 
     time_slots = [
@@ -147,7 +165,7 @@ if __name__ == "__main__":
         "Saturday, 1", "Saturday, 2", "Saturday, 3"
     ]
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, group_df, time_slots)
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots)
     try:
         schedule = scheduler.solve()
         print("Optimized Schedule:")
@@ -161,7 +179,7 @@ if __name__ == "__main__":
 
         # Run tests on schedule
         group_ids = group_df["groupID"].tolist()
-        run_tests(schedule, group_ids)
+        run_tests(schedule, group_ids, location_options_df)
 
     except ValueError as e:
         print(f"Error: {e}")
