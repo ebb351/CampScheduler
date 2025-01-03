@@ -85,24 +85,54 @@ def test_location_activity_match(schedule_df, loc_options_df):
             })
     return violations
 
-def run_tests(schedule, group_ids, location_options_df):
+def test_staff_availability(schedule, staff_unavailable_time_slots, staff_df):
+    """
+    Test to ensure no staff assigned to activities during unavailable time slots
+    :param schedule_df: List of scheduled activities, each containing:
+                     {"activity": ..., "staff": ..., "location": ..., "time_slot": ..., "group": ...}
+    :param staff_unavailable_time_slots: Dictionary mapping staffID to a list of unavailable time slots
+    :param staff_df: DataFrame containing staff information (staffID, staffName)
+    """
+    violations = []
+    for entry in schedule:
+        # Extract relevant information from schedule entry
+        staff_name = entry["staff"]
+        time_slot = entry["time_slot"]
+
+        # Get staffID from staffName
+        staff_id = staff_df.loc[staff_df["staffName"] == staff_name, "staffID"].values[0]
+
+        # Check if the staff member is unavailable during this time slot
+        if staff_id in staff_unavailable_time_slots:
+            if time_slot in staff_unavailable_time_slots[staff_id]:
+                violations.append(entry)
+    return violations
+
+def run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df):
     """
     Run all test functions on the generated schedule.
     """
     schedule_df = parse_schedule(schedule)
 
     print("Running Tests...")
-    staff_violations = test_staff_non_overlap(schedule_df)
+    staff_overlap_violations = test_staff_non_overlap(schedule_df)
+    staff_availability_violations = test_staff_availability(schedule, staff_unavailable_time_slots, staff_df)
     location_violations = test_location_non_overlap(schedule_df)
     location_activity_violations = test_location_activity_match(schedule_df, location_options_df)
     activity_violations = test_activity_exclusivity(schedule_df)
     group_violations = test_group_activity_count(schedule_df, group_ids)
 
+
     print("Test Results:")
-    if staff_violations:
-        print("Staff Non-Overlap Violations:", staff_violations)
+    if staff_overlap_violations:
+        print("Staff Non-Overlap Violations:", staff_overlap_violations)
     else:
         print("Staff Non-Overlap: PASSED")
+
+    if staff_availability_violations:
+        print("Staff Availability Violations:", staff_availability_violations)
+    else:
+        print("Staff Availability: PASSED")
 
     if location_violations:
         print("Location Non-Overlap Violations:", location_violations)

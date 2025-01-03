@@ -240,7 +240,7 @@ if __name__ == "__main__":
                     )
 
         # Run tests on schedule
-        run_tests(schedule, group_ids, location_options_df)
+        run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df)
 
     except ValueError as e:
         print(f"Error: {e}")
