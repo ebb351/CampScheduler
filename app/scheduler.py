@@ -109,10 +109,7 @@ class Scheduler:
         for g in group_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) >= 3
-                )
-                model.Add(
-                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) <= 4
+                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) == 4
                 )
 
         # Link staff, location, and activity assignments
