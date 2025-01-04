@@ -24,7 +24,7 @@ def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -41,11 +41,12 @@ class Scheduler:
         self.group_df = group_df
         self.time_slots = time_slots
         self.staff_unavailable_time_slots = staff_unavailable_time_slots
+        self.leads_mapping = leads_mapping
 
     def solve(self):
         # Extract IDs
         staff_ids = self.staff_df["staffID"].tolist()
-        activity_ids = self.activity_df["ActivityID"].tolist()
+        activity_ids = self.activity_df["activityID"].tolist()
         location_ids = self.location_df["locID"].tolist()
         group_ids = self.group_df["groupID"].tolist()
 
@@ -105,14 +106,11 @@ class Scheduler:
                         sum(valid_loc_vars) == sum(x[i,j,k,g] for i in staff_ids)
                     )
 
-        # Group-specific activity assignment (3-4 activities per time slot)
+        # Group-specific activity assignment (4 activities per time slot)
         for g in group_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) >= 3
-                )
-                model.Add(
-                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) <= 4
+                    sum(x[i,j,k,g] for i in staff_ids for j in activity_ids) == 4
                 )
 
         # Link staff, location, and activity assignments
@@ -130,6 +128,23 @@ class Scheduler:
                 for j in activity_ids:
                     for g in group_ids:
                         model.Add(x[i, j, k, g] == 0)
+
+        # At least one staff assigned who can lead each activity
+        for j in activity_ids:
+            for k in self.time_slots:
+                for g in group_ids:
+                    # total staff assigned to this activity j,k,g
+                    total_assigned = sum(x[i, j, k, g] for i in staff_ids)
+
+                    # total staff assigned who can lead
+                    leads_assigned = sum(
+                        x[i, j, k, g] for i in staff_ids if j in leads_mapping.get(i, [])
+                    )
+
+                    # If total_assigned > 0, leads_assigned >= 1
+                    # Enforced by: leads_assigned >= total_assigned * 1_of_anyone_assigned
+                    # Simplest approach:
+                    model.Add(leads_assigned >= total_assigned)
 
         # Empty objective function (currently no optimization)
         model.Minimize(0)
@@ -154,7 +169,7 @@ class Scheduler:
                                         break
 
                                 # Map IDs to names
-                                activity_name = self.activity_df.loc[self.activity_df["ActivityID"] == j, "ActivityName"].values[0]
+                                activity_name = self.activity_df.loc[self.activity_df["activityID"] == j, "activityName"].values[0]
                                 staff_name = self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
                                 location_name = self.location_df.loc[self.location_df["locID"] == assigned_location, "locName"].values[0]
 
@@ -186,6 +201,10 @@ if __name__ == "__main__":
     group_df = manager.get_dataframe("groups")
     off_days_df = manager.get_dataframe("offDays")
     trips_ooc_df = manager.get_dataframe("tripsOOC")
+    leads_df = manager.get_dataframe("leads")
+
+    # Create leads mapping
+    leads_mapping = leads_df.groupby('staffID')['activityID'].apply(list).to_dict()
 
     # Map dates to time slots for off_days and trips_ooc
     off_days = off_days_df.groupby("staffID")["date"].apply(list).to_dict()
@@ -214,7 +233,7 @@ if __name__ == "__main__":
         ("Saturday", 1), ("Saturday", 2), ("Saturday", 3)
     ]
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots)
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping)
     try:
         schedule = scheduler.solve()
 
