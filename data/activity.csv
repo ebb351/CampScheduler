@@ -1,4 +1,4 @@
-ActivityID,ActivityName,numStaffReq,duration,category,perWeek
+activityID,activityName,numStaffReq,duration,category,perWeek
 1,waterfront,4,1,1,4
 2,tennis,1,1,1,4
 3,hoops,1,1,1,3

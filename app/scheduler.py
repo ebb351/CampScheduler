@@ -24,7 +24,7 @@ def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -46,7 +46,7 @@ class Scheduler:
     def solve(self):
         # Extract IDs
         staff_ids = self.staff_df["staffID"].tolist()
-        activity_ids = self.activity_df["ActivityID"].tolist()
+        activity_ids = self.activity_df["activityID"].tolist()
         location_ids = self.location_df["locID"].tolist()
         group_ids = self.group_df["groupID"].tolist()
 
@@ -56,6 +56,7 @@ class Scheduler:
         # Decision variables
         x = {} # Group specific staff assignment: x[i: staff, j: activity, k: time slot]
         y = {} # Group specific location assignment y[l: location, j: activity, k: time slot ]
+
 
         for g in group_ids:
             for i in staff_ids:
@@ -105,7 +106,7 @@ class Scheduler:
                         sum(valid_loc_vars) == sum(x[i,j,k,g] for i in staff_ids)
                     )
 
-        # Group-specific activity assignment (3-4 activities per time slot)
+        # Group-specific activity assignment (4 activities per time slot)
         for g in group_ids:
             for k in self.time_slots:
                 model.Add(
@@ -128,55 +129,25 @@ class Scheduler:
                     for g in group_ids:
                         model.Add(x[i, j, k, g] == 0)
 
-        # At least one staff member assigned who can lead activity
-        mandatory_leads_activities = [1, 5, 11]
-
-        # Mandatory for cert-requiring activities (waterfront, climbing, archery)
-        # Soften the mandatory leads constraint by minimizing unfulfilled leads
-        unfulfilled_leads = []  # List to track dummy variables for unfulfilled mandatory leads
-        unfulfilled_leads_details = []  # List of (j, k, g) tuples for details
-
-        for j in mandatory_leads_activities:
+        # At least one staff assigned who can lead each activity
+        for j in activity_ids:
             for k in self.time_slots:
                 for g in group_ids:
-                    # Sum of staff assigned as leads for this activity, time slot, and group
+                    # total staff assigned to this activity j,k,g
+                    total_assigned = sum(x[i, j, k, g] for i in staff_ids)
+
+                    # total staff assigned who can lead
                     leads_assigned = sum(
-                        x[i, j, k, g] for i in staff_ids if j in self.leads_mapping.get(i, [])
+                        x[i, j, k, g] for i in staff_ids if j in leads_mapping.get(i, [])
                     )
 
-                    # Create a dummy variable to track if this lead requirement is unfulfilled
-                    dummy_var = model.NewBoolVar(f"dummy_lead_unfulfilled_{j}_{k}_{g}")
-
-                    # If no leads are assigned, the dummy variable is activated
-                    model.Add(leads_assigned >= 1).OnlyEnforceIf(dummy_var.Not())
-                    model.Add(leads_assigned < 1).OnlyEnforceIf(dummy_var)
-
-                    # Add the dummy variable to the unfulfilled leads list
-                    unfulfilled_leads.append(dummy_var)
-                    unfulfilled_leads_details.append((dummy_var, j, k, g))
-
-
-        # Soft constraint for other activities
-        for j in activity_ids:
-            if j not in mandatory_leads_activities:
-                for k in self.time_slots:
-                    for g in group_ids:
-                        for i in staff_ids:
-                            if j in self.leads_mapping.get(i, []):
-                                model.AddHint(x[i,j,k,g], 1)
-
-        # # No staff assigned who can't lead or assist
-        # for i in staff_ids:
-        #     for j in activity_ids:
-        #         if j not in leads_mapping.get(i, []) and j not in assists_mapping.get(i, []):
-        #             for k in self.time_slots:
-        #                 for g in group_ids:
-        #                     model.Add(x[i,j,k,g] == 0) # Disallow assignment
+                    # If total_assigned > 0, leads_assigned >= 1
+                    # Enforced by: leads_assigned >= total_assigned * 1_of_anyone_assigned
+                    # Simplest approach:
+                    model.Add(leads_assigned >= total_assigned)
 
         # Empty objective function (currently no optimization)
-        model.Minimize(sum(unfulfilled_leads))
-
-        # model.Minimize(0)
+        model.Minimize(0)
 
         # Solve the model
         solver = cp_model.CpSolver()
@@ -184,7 +155,6 @@ class Scheduler:
 
         # Extract Results
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-
             schedule = []
             for g in group_ids:
                 for i in staff_ids:
@@ -199,35 +169,18 @@ class Scheduler:
                                         break
 
                                 # Map IDs to names
-                                activity_name = self.activity_df.loc[self.activity_df["ActivityID"] == j, "ActivityName"].values[0]
+                                activity_name = self.activity_df.loc[self.activity_df["activityID"] == j, "activityName"].values[0]
                                 staff_name = self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
                                 location_name = self.location_df.loc[self.location_df["locID"] == assigned_location, "locName"].values[0]
-                                assigned_role = "Lead" if j in leads_mapping.get(i, []) else "Assist"
 
                                 schedule.append({
                                     "activity": activity_name,
                                     "staff": staff_name,
-                                    "role": assigned_role,
                                     "location": location_name,
                                     "time_slot": k,
                                     "group": g
                                 })
-
-            # Count unfulfilled leads that end up on the schedule
-            unfulfilled_leads_on_schedule = 0
-
-            for dummy_var, j, k, g in unfulfilled_leads_details:
-                if solver.Value(dummy_var) == 1:
-                    # Check if the activity j is scheduled for group g at time slot k
-                    activity_scheduled = any(
-                        solver.Value(x[i, j, k, g]) == 1 for i in staff_ids
-                    )
-                    if activity_scheduled:
-                        unfulfilled_leads_on_schedule += 1
-
-            print(f"Total unfulfilled mandatory leads on the schedule: {unfulfilled_leads_on_schedule}")
-
-            return schedule, unfulfilled_leads_details, x, solver
+            return schedule
         else:
             raise ValueError("No feasible solution found.")
 
@@ -249,17 +202,13 @@ if __name__ == "__main__":
     off_days_df = manager.get_dataframe("offDays")
     trips_ooc_df = manager.get_dataframe("tripsOOC")
     leads_df = manager.get_dataframe("leads")
-    assists_df = manager.get_dataframe("assists")
+
+    # Create leads mapping
+    leads_mapping = leads_df.groupby('staffID')['activityID'].apply(list).to_dict()
 
     # Map dates to time slots for off_days and trips_ooc
     off_days = off_days_df.groupby("staffID")["date"].apply(list).to_dict()
     staff_off_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in off_days.items()}
-
-    # Map staffID to activities they can lead
-    leads_mapping = leads_df.groupby("staffID")["activityID"].apply(list).to_dict()
-
-    # Map staffID to activities they can assist
-    assists_mapping = assists_df.groupby("staffID")["activityID"].apply(list).to_dict()
 
     trips = trips_ooc_df.groupby("staffID")["date"].apply(list).to_dict()
     staff_trip_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in trips.items()}
@@ -284,22 +233,9 @@ if __name__ == "__main__":
         ("Saturday", 1), ("Saturday", 2), ("Saturday", 3)
     ]
 
-    # for j in activity_df["ActivityID"]:
-    #     for k in time_slots:
-    #         available_leads = [
-    #             i for i in staff_df["staffID"] if
-    #             j in leads_mapping.get(i, []) and k not in staff_unavailable_time_slots.get(i, [])
-    #         ]
-    #         print(f"Activity {j}, Time Slot {k}: Available Leads = {available_leads}")
-
-    # Print availability matrix
-    # for staff_id, unavailable_slots in staff_unavailable_time_slots.items():
-    #     print(f"Staff ID {staff_id} unavailable slots: {unavailable_slots}")
-
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping)
-
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping)
     try:
-        schedule, unfulfilled_leads_details, x, solver = scheduler.solve()
+        schedule = scheduler.solve()
 
         # Parse schedule into DataFrame for easier sorting
         schedule_df = pd.DataFrame(schedule)
@@ -323,15 +259,7 @@ if __name__ == "__main__":
                     )
 
         # Run tests on schedule
-        run_tests(
-            schedule,
-            group_ids,
-            location_options_df,
-            staff_unavailable_time_slots,
-            staff_df,
-            unfulfilled_leads_details,
-            x,
-            solver
-        )
+        run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df)
+
     except ValueError as e:
         print(f"Error: {e}")
