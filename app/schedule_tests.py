@@ -88,7 +88,7 @@ def test_location_activity_match(schedule_df, loc_options_df):
 def test_staff_availability(schedule, staff_unavailable_time_slots, staff_df):
     """
     Test to ensure no staff assigned to activities during unavailable time slots
-    :param schedule_df: List of scheduled activities, each containing:
+    :param schedule: List of scheduled activities, each containing:
                      {"activity": ..., "staff": ..., "location": ..., "time_slot": ..., "group": ...}
     :param staff_unavailable_time_slots: Dictionary mapping staffID to a list of unavailable time slots
     :param staff_df: DataFrame containing staff information (staffID, staffName)
@@ -108,29 +108,37 @@ def test_staff_availability(schedule, staff_unavailable_time_slots, staff_df):
                 violations.append(entry)
     return violations
 
-def test_unfulfilled_leads_on_schedule(schedule, unfulfilled_leads_details, staff_ids, x, solver):
+def test_mandatory_leads(schedule, leads_mapping, staff_df, activity_df):
     """
-    Test to ensure no unfulfilled leads are assigned to scheduled activities.
+    Test to ensure all activities on the schedule have qualified lead assigned
     """
     violations = []
 
-    for dummy_var, j, k, g in unfulfilled_leads_details:
-        if solver.Value(dummy_var) == 1:
-            # Check if the activity j is scheduled for group g at time slot k
-            activity_scheduled = any(
-                solver.Value(x[i, j, k, g]) == 1 for i in staff_ids
-            )
-            if activity_scheduled:
-                violations.append({
-                    "activity_id": j,
-                    "time_slot": k,
-                    "group_id": g,
-                    "dummy_var": solver.Value(dummy_var)
-                })
+    # Create a mapping of activity names to activity IDs
+    activity_name_to_id = dict(zip(activity_df["activityName"], activity_df["activityID"]))
+    staff_name_to_id = dict(zip(staff_df["staffName"], staff_df["staffID"]))
+
+    # Create a lookup for staffID to leads_mapping
+    staff_lead_lookup = {
+        staff_id: set(leads) for staff_id, leads in leads_mapping.items()
+    }
+
+    # Iterate through schedule and check lead assignment
+    for entry in schedule:
+        activity_name = entry["activity"]
+        staff_name = entry["staff"]
+
+        activity_id = activity_name_to_id.get(activity_name)
+        staff_id = staff_name_to_id.get(staff_name)
+
+        if activity_id not in staff_lead_lookup.get(staff_id, set()):
+            violations.append(entry)
+
     return violations
 
 
-def run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, unfulfilled_leads_details, x, solver):
+
+def run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping):
     """
     Run all test functions on the generated schedule.
     """
@@ -143,7 +151,7 @@ def run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_s
     location_activity_violations = test_location_activity_match(schedule_df, location_options_df)
     activity_violations = test_activity_exclusivity(schedule_df)
     group_violations = test_group_activity_count(schedule_df, group_ids)
-    unfulfilled_leads_violations = test_unfulfilled_leads_on_schedule(schedule, unfulfilled_leads_details, staff_df["staffID"].tolist(), x, solver)
+    leads_violations = test_mandatory_leads(schedule, leads_mapping, staff_df, activity_df)
 
     print("Test Results:")
     if staff_overlap_violations:
@@ -176,7 +184,7 @@ def run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_s
     else:
         print("Group Activity Count: PASSED")
 
-    if unfulfilled_leads_violations:
-        print("Unfulfilled Leads Violations:", unfulfilled_leads_violations)
+    if leads_violations:
+        print("Mandatory Leads Violations:", leads_violations)
     else:
-        print("Unfulfilled Leads: PASSED")
+        print("Mandatory Leads: PASSED")
