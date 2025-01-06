@@ -24,7 +24,7 @@ def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -43,6 +43,7 @@ class Scheduler:
         self.staff_unavailable_time_slots = staff_unavailable_time_slots
         self.leads_mapping = leads_mapping
         self.assists_mapping = assists_mapping
+        self.waterfront_schedule = waterfront_schedule
 
     def solve(self):
         # Extract IDs
@@ -50,6 +51,10 @@ class Scheduler:
         activity_ids = self.activity_df["activityID"].tolist()
         location_ids = self.location_df["locID"].tolist()
         group_ids = self.group_df["groupID"].tolist()
+        waterfront_id = self.activity_df.loc[
+            self.activity_df["activityName"] == "waterfront",
+            "activityID"
+        ].values[0]
 
         # Create the model
         model = cp_model.CpModel()
@@ -96,7 +101,7 @@ class Scheduler:
         for j in activity_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(x[i,j,k,g] for i in staff_ids for g in group_ids) <= 1
+                    sum(z[j,k,g] for g in group_ids) <= 1
                 )
 
         # Staff non-overlap across groups in the same time slot
@@ -110,7 +115,7 @@ class Scheduler:
         for l in location_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(y[l,j,k,g] for j in activity_ids for g in group_ids) <= 1
+                    sum(y[l,j,k,g] for j in activity_ids for g in group_ids) <=1
                 )
 
         # Activities only take place in a valid location
@@ -124,16 +129,17 @@ class Scheduler:
             for j in activity_ids:
                 for k in self.time_slots:
                     valid_loc_vars = [y[l,j,k,g] for l in valid_locations.get(j, [])]
-                    model.Add(
-                        sum(valid_loc_vars) == sum(x[i,j,k,g] for i in staff_ids)
-                    )
+                    model.Add(sum(valid_loc_vars) == z[j,k,g])
 
         # Group-specific activity assignment (4 activities per time slot)
         for g in group_ids:
             for k in self.time_slots:
-                model.Add(
-                    sum(z[j,k,g] for j in activity_ids) == 4
-                )
+                if k not in waterfront_schedule[g]:
+                    model.Add(
+                        sum(z[j,k,g] for j in activity_ids) == 4
+                    )
+                else:
+                    pass
 
         # Link staff, location, and activity assignments
         for g in group_ids:
@@ -195,6 +201,14 @@ class Scheduler:
                     # if z=1 --> leads_assigned >=1
                     model.Add(leads_assigned >= 1).OnlyEnforceIf(z[j, k, g])
 
+        # Waterfront scheduled at same times each week per group, only activity in that time slot
+        for g, timeslots in waterfront_schedule.items():
+            for k in timeslots:
+                # 1) Must schedule waterfront
+                model.Add(z[waterfront_id, k, g] == 1)
+                # 2) No other activities in that time slot
+                model.Add(sum(z[j,k,g] for j in activity_ids) == 1)
+
         # Empty objective function (currently no optimization)
         model.Minimize(0)
 
@@ -205,32 +219,49 @@ class Scheduler:
         # Extract Results
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             schedule = []
-            for g in group_ids:
-                for i in staff_ids:
+
+            if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+                for g in group_ids:
                     for j in activity_ids:
                         for k in self.time_slots:
-                            if solver.Value(x[i,j,k,g]) == 1:
-                                # Find assigned location
+                            # Collect all staff i assigned
+                            assigned_staff_ids = [i for i in staff_ids if solver.Value(x[i, j, k, g]) == 1]
+
+                            if assigned_staff_ids:
+                                # That means (j,k,g) is actually chosen (z=1) and has staff
+
+                                # Find assigned location exactly once
                                 assigned_location = None
                                 for l in location_ids:
-                                    if solver.Value(y[l,j,k,g ]) == 1:
+                                    if solver.Value(y[l, j, k, g]) == 1:
                                         assigned_location = l
                                         break
 
-                                # Map IDs to names
-                                activity_name = self.activity_df.loc[self.activity_df["activityID"] == j, "activityName"].values[0]
-                                staff_name = self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
-                                location_name = self.location_df.loc[self.location_df["locID"] == assigned_location, "locName"].values[0]
+                                # Convert staff IDs to staff names
+                                assigned_staff_names = []
+                                for i in assigned_staff_ids:
+                                    name = self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
+                                    assigned_staff_names.append(name)
+
+                                # Convert IDs to activity/location names
+                                activity_name = self.activity_df.loc[
+                                    self.activity_df["activityID"] == j,
+                                    "activityName"
+                                ].values[0]
+                                location_name = self.location_df.loc[
+                                    self.location_df["locID"] == assigned_location,
+                                    "locName"
+                                ].values[0]
 
                                 schedule.append({
                                     "activity": activity_name,
-                                    "staff": [self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
-                                              for i in staff_ids if solver.Value(x[i,j,k,g]) == 1],
+                                    "staff": assigned_staff_names,  # list of all staff
                                     "location": location_name,
                                     "time_slot": k,
                                     "group": g
                                 })
-            return schedule
+
+                return schedule
         else:
             raise ValueError("No feasible solution found.")
 
@@ -285,7 +316,14 @@ if __name__ == "__main__":
         ("Saturday", 1), ("Saturday", 2), ("Saturday", 3)
     ]
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping)
+    waterfront_schedule = {
+        1: [("Tuesday", 3), ("Wednesday", 3), ("Friday", 3), ("Saturday", 3)],
+        2: [("Monday", 2), ("Tuesday", 2), ("Thursday", 2), ("Saturday", 2)],
+        3: [("Monday", 3), ("Wednesday", 2), ("Friday", 2), ("Saturday", 1)],
+        4: [("Monday", 1), ("Wednesday", 1), ("Thursday", 1), ("Friday", 1)]
+    }
+
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule)
     try:
         schedule = scheduler.solve()
 
@@ -295,6 +333,7 @@ if __name__ == "__main__":
         # Sort the schedule based on the order of time_slots
         schedule_df['time_slot'] = pd.Categorical(schedule_df['time_slot'], categories = time_slots, ordered=True)
         sorted_schedule = schedule_df.sort_values(by=['time_slot', 'group'])
+
 
         # Print sorted schedule by time slot
         print("Optimized Schedule:")
@@ -311,7 +350,8 @@ if __name__ == "__main__":
                     )
 
         # Run tests on schedule
-        run_tests(schedule, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping)
+        schedule_df = schedule_df.explode('staff')
+        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule)
 
     except ValueError as e:
         print(f"Error: {e}")
