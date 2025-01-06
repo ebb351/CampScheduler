@@ -55,6 +55,8 @@ class Scheduler:
             self.activity_df["activityName"] == "waterfront",
             "activityID"
         ].values[0]
+        golf_id = self.activity_df.loc[self.activity_df["activityName"] == "golf", "activityID"].values[0]
+        tennis_id = self.activity_df.loc[self.activity_df["activityName"] == "tennis", "activityID"].values[0]
 
         # Create the model
         model = cp_model.CpModel()
@@ -64,6 +66,7 @@ class Scheduler:
         y = {} # Group specific location assignment y[l: location, j: activity, k: time slot ]
         t = {} # Total staff assigned to activity j, k, g
         z = {} # if z == 1, then T_jkg >= numStaffReq[j], else T_jkg == 0
+        both_gt = {} # Bool for both golf and tennis scheduled in same time slot
 
         for g in group_ids:
             for i in staff_ids:
@@ -95,6 +98,10 @@ class Scheduler:
                     z[j,k,g] = model.NewBoolVar(
                         f'z[{j},{k[0]}, {k[1]},{g}]'
                     )
+
+        for g in group_ids:
+            for k in self.time_slots:
+                both_gt[k,g] = model.NewBoolVar(f"both_golf_tennis_{k}_{g}")
 
         # CONSTRAINTS:
         # Activity exclusivity across groups in the same time slot
@@ -134,12 +141,19 @@ class Scheduler:
         # Group-specific activity assignment (4 activities per time slot)
         for g in group_ids:
             for k in self.time_slots:
-                if k not in waterfront_schedule[g]:
-                    model.Add(
-                        sum(z[j,k,g] for j in activity_ids) == 4
-                    )
-                else:
-                    pass
+                if k in waterfront_schedule[g]:
+                    continue
+
+                # If k is NOT a waterfront slot, sum(...)=4 only if both_gt=0, if both_gt=1, sum(...)=2
+                model.Add(
+                    sum(z[j,k,g] for j in activity_ids) == 4
+                ).OnlyEnforceIf(both_gt[k, g].Not())
+
+                model.Add(
+                    sum(z[j,k,g] for j in activity_ids) == 2
+                ).OnlyEnforceIf(both_gt[k, g])
+
+
 
         # Link staff, location, and activity assignments
         for g in group_ids:
@@ -208,6 +222,32 @@ class Scheduler:
                 model.Add(z[waterfront_id, k, g] == 1)
                 # 2) No other activities in that time slot
                 model.Add(sum(z[j,k,g] for j in activity_ids) == 1)
+
+        # Golf and Tennis only scheduled at the same time slot
+        # If we choose "both golf & tennis" in slot k,g => sum of z[...] = 2
+        # specifically z[golf_id,k,g] == 1 AND z[tennis_id,k,g] == 1, and no other activities.
+
+        for g in group_ids:
+            for k in time_slots:
+                # If both_gt=1 => golf & tennis are chosen => sum(z[j,k,g])=2
+                model.Add(
+                    sum(z[j, k, g] for j in activity_ids) == 2
+                ).OnlyEnforceIf(both_gt[k, g])
+
+                # If both_gt=0 => we can't have BOTH golf & tennis
+                # That doesn't necessarily forbid golf alone or tennis alone,
+                # so we strictly link them:
+
+                # We also want: both_gt=1 <=> z[golf_id,k,g] & z[tennis_id,k,g]
+                model.Add(z[golf_id, k, g] + z[tennis_id, k, g] == 2).OnlyEnforceIf(both_gt[k, g])
+                model.Add(z[golf_id, k, g] + z[tennis_id, k, g] <= 1).OnlyEnforceIf(both_gt[k, g].Not())
+
+        # Golf and Tennis at least twice a week
+        # For each group, sum of both_gt >= 2
+        for g in group_ids:
+            model.Add(
+                sum(both_gt[k, g] for k in time_slots) >= 2
+            )
 
         # Empty objective function (currently no optimization)
         model.Minimize(0)
