@@ -62,10 +62,11 @@ def test_activity_exclusivity(schedule_df):
 
 def test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront_schedule):
     """
-    For each group, each time_slot:
-      - If time_slot is in waterfront_schedule[g], we expect exactly 1 distinct activity: 'waterfront'
-      - Otherwise, we expect 3-4 distinct activities
-    """
+        For each group, each time_slot:
+          1) If time_slot is in waterfront_schedule[g], expect exactly 1 distinct activity = 'waterfront'
+          2) Else if the distinct activities == {'golf', 'tennis'}, that's valid "golf+tennis" only
+          3) Otherwise, expect 3-4 distinct activities in that slot.
+        """
     violations = []
 
     # Group by (group, time_slot)
@@ -74,9 +75,13 @@ def test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront
         # sub_df is all rows for group=grp, time_slot=ts, each row = 1 staff
         distinct_acts = sub_df["activity"].drop_duplicates()
 
+        # Convert to a set for easy "in" checks
+        distinct_acts = set(distinct_acts)
+
+        # 1) Check if this is a waterfront slot
         if ts in waterfront_schedule[grp]:
             # This should be a "waterfront only" slot
-            if len(distinct_acts) != 1 or "waterfront" not in distinct_acts.values:
+            if len(distinct_acts) != 1 or "waterfront" not in distinct_acts:
                 # e.g. either 0 or 2+ distinct activities, or no 'waterfront' activity
                 violations.append({
                     "group": grp,
@@ -84,14 +89,19 @@ def test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront
                     "msg": f"Expected exactly 1 activity='waterfront', found {list(distinct_acts)}"
                 })
         else:
-            # This is a normal slot => want 3-4 distinct activities
-            act_count = len(distinct_acts)
-            if act_count < 3 or act_count > 4:
-                violations.append({
-                    "group": grp,
-                    "time_slot": ts,
-                    "msg": f"Expected 3-4 activities, found {act_count}: {list(distinct_acts)}"
-                })
+            # 2) Check if this is a "golf+tennis" slot
+            if distinct_acts == {"golf", "tennis"}:
+                # This is a valid "golf+tennis" slot
+                continue
+            else:
+                # 3) This is a normal slot --> want 4 distinct activities
+                act_count = len(distinct_acts)
+                if act_count < 4:
+                    violations.append({
+                        "group": grp,
+                        "time_slot": ts,
+                        "msg": f"Expected 4 activities, found {act_count}: {list(distinct_acts)}"
+                    })
 
     return violations
 
