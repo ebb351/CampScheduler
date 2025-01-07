@@ -24,7 +24,7 @@ def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -85,6 +85,12 @@ class Scheduler:
         # inspection_slot[i,k]: Boolean => "staff i is assigned to inspection in time_slot k"
         inspection_slot = {}
 
+        # driving_range[g, day]: Boolean => "driving range is scheduled for group g on day"
+        driving_range_day = {}
+
+        # driving_range_staff[g, day, i]: Boolean => "staff i is assigned to driving range for group g on day"
+        driving_range_staff = {}
+
         for g in group_ids:
             for i in staff_ids:
                 for j in activity_ids:
@@ -127,6 +133,12 @@ class Scheduler:
                 else:
                     pass # no inspection in period 2 or 3
 
+        for g in group_ids:
+            for day in allowed_dr_days:
+                driving_range_day[g, day] = model.NewBoolVar(f"driving_range_g{g}_{day}")
+                for i in staff_ids:
+                    driving_range_staff[g, day, i] = model.NewBoolVar(f"driving_range_g{g}_{day}_{i}")
+
         # CONSTRAINTS:
         # Activity exclusivity across groups in the same time slot
         for j in activity_ids:
@@ -166,7 +178,7 @@ class Scheduler:
         for g in group_ids:
             for k in self.time_slots:
                 if k in waterfront_schedule[g]:
-                    continue
+                    continue # waterfront already handled
 
                 # If k is NOT a waterfront slot, sum(...)=4 only if both_gt=0, if both_gt=1, sum(...)=2
                 model.Add(
@@ -176,8 +188,6 @@ class Scheduler:
                 model.Add(
                     sum(activity_chosen[j,k,g] for j in activity_ids) == 2
                 ).OnlyEnforceIf(golf_tennis_slot[k, g])
-
-
 
         # Link staff, location, and activity assignments
         for g in group_ids:
@@ -317,6 +327,76 @@ class Scheduler:
                 else:
                     pass # no inspection --> no overlap constraint needed
 
+        # Each group has driving range at most once a week
+        for g in group_ids:
+            model.Add(
+                sum(driving_range_day[g, day] for day in allowed_dr_days) == 1
+            )
+
+        # Additional Driving Range Constraints
+        driving_range_id = self.activity_df.loc[
+            self.activity_df["activityName"] == "driving range",
+            "activityID"
+        ].values[0]
+
+        # "Driving Range" cannot be chosen outside Periods 1 and 2 or outside allowed days
+        for g in group_ids:
+            for j in activity_ids:
+                if j == driving_range_id:
+                    for k in self.time_slots:
+                        day, period = k
+                        if day not in allowed_dr_days or period not in [1, 2]:
+                            model.Add(activity_chosen[j, k, g] == 0)
+
+        for g in group_ids:
+            for day in allowed_dr_days:
+                k1 = (day,1)
+                k2 = (day,2)
+                dr_day_var = driving_range_day[g, day]
+
+                # If driving range in scheduled on this day, it must be in both periods 1 and 2
+                model.Add(activity_chosen[driving_range_id, k1, g] == 1).OnlyEnforceIf(dr_day_var)
+                model.Add(activity_chosen[driving_range_id, k2, g] == 1).OnlyEnforceIf(dr_day_var)
+
+                # If driving range is not scheduled on this day, it must be in neither period 1 nor 2
+                model.Add(activity_chosen[driving_range_id, k1, g] == 0).OnlyEnforceIf(dr_day_var.Not())
+                model.Add(activity_chosen[driving_range_id, k2, g] == 0).OnlyEnforceIf(dr_day_var.Not())
+
+                # At least one staff assigned to driving range
+                model.Add(
+                    sum(driving_range_staff[g, day, i] for i in staff_ids) >= 1
+                ).OnlyEnforceIf(dr_day_var)
+
+                # If no driving range, no staff assigned
+                model.Add(
+                    sum(driving_range_staff[g, day, i] for i in staff_ids) == 0
+                ).OnlyEnforceIf(dr_day_var.Not())
+
+                # Staff assigned to driving range must be assigned to both periods 1 and 2
+                for i in staff_ids:
+                    model.Add(
+                        staff_assign[i, driving_range_id, k1, g] == driving_range_staff[g, day, i]
+                    ).OnlyEnforceIf(dr_day_var)
+                    model.Add(
+                        staff_assign[i, driving_range_id, k2, g] == driving_range_staff[g, day, i]
+                    ).OnlyEnforceIf(dr_day_var)
+
+                    # If Driving Range is not scheduled on this day, staff_assign variables must be 0
+                    model.Add(
+                        staff_assign[i, driving_range_id, k1, g] == 0
+                    ).OnlyEnforceIf(dr_day_var.Not())
+                    model.Add(
+                        staff_assign[i, driving_range_id, k2, g] == 0
+                    ).OnlyEnforceIf(dr_day_var.Not())
+
+                    # Staff must be available
+                    unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
+                    if k1 in unavailable_time_slots or k2 in unavailable_time_slots:
+                        # Staff i cannot be assigned to Driving Range on this day
+                        model.Add(driving_range_staff[g, day, i] == 0)
+
+
+        # OBJECTIVE FUNCTION:
         # Empty objective function (currently no optimization)
         model.Minimize(0)
 
@@ -324,13 +404,16 @@ class Scheduler:
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
 
-        # Extract Results
+        # EXTRACT RESULTS
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             schedule = []
 
             if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
                 for g in group_ids:
                     for j in activity_ids:
+                        # skip driving range
+                        if j == driving_range_id:
+                            continue
                         for k in self.time_slots:
                             # Collect all staff i assigned
                             assigned_staff_ids = [i for i in staff_ids if solver.Value(staff_assign[i, j, k, g]) == 1]
@@ -371,7 +454,43 @@ class Scheduler:
                                     "group": g
                                 })
 
-                # Collect inspection assignment
+                # Extract driving range assignment
+                for g in group_ids:
+                    for day in allowed_dr_days:
+                        if solver.Value(driving_range_day[g, day]) == 1:
+                            k1 = (day, 1)
+                            k2 = (day, 2)
+
+                            # Find the staff assigned to driving range
+                            assigned_staff_ids = [
+                                i for i in staff_ids
+                                if solver.Value(driving_range_staff[g, day, i]) == 1
+                            ]
+
+                            if assigned_staff_ids:
+                                for i in assigned_staff_ids:
+                                    names = self.staff_df.loc[
+                                        self.staff_df["staffID"] == i,
+                                        "staffName"
+                                    ].values[0]
+
+                                # Append driving range to schedule in both periods
+                                schedule.append({
+                                    "activity": "driving range",
+                                    "staff": [names],
+                                    "location": "driving range",
+                                    "time_slot": k1,
+                                    "group": g
+                                })
+                                schedule.append({
+                                    "activity": "driving range",
+                                    "staff": [names],
+                                    "location": "driving range",
+                                    "time_slot": k2,
+                                    "group": g
+                                })
+
+                # Extract inspection assignment
                 for k in inspection_slots:
                     assigned_inspection_id = [i for i in staff_ids if solver.Value(inspection_slot[i,k]) == 1]
                     if assigned_inspection_id:
@@ -460,7 +579,9 @@ if __name__ == "__main__":
         ("Saturday", 1)
     ]
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots)
+    allowed_dr_days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
+
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days)
     try:
         schedule = scheduler.solve()
 
@@ -488,7 +609,7 @@ if __name__ == "__main__":
 
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
-        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots)
+        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days)
 
     except ValueError as e:
         print(f"Error: {e}")
