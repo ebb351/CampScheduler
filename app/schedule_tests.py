@@ -60,7 +60,7 @@ def test_activity_exclusivity(schedule_df):
     return violations
 
 
-def test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront_schedule):
+def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group_ids, waterfront_schedule):
     """
         For each group, each time_slot:
           1) If time_slot is in waterfront_schedule[g], expect exactly 1 distinct activity = 'waterfront'
@@ -72,6 +72,10 @@ def test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront
     # Group by (group, time_slot)
     grouped = schedule_df.groupby(["group", "time_slot"], observed=False)
     for (grp, ts), sub_df in grouped:
+        # skip for inspection (location = "NA"
+        if grp == "NA":
+            continue
+
         # sub_df is all rows for group=grp, time_slot=ts, each row = 1 staff
         distinct_acts = sub_df["activity"].drop_duplicates()
 
@@ -122,6 +126,10 @@ def test_location_activity_match(schedule_df, loc_options_df):
     for _, row in schedule_df.iterrows():
         activity_name = row["activity"]
         location_name = row["location"]
+
+        # skip if location is "NA"
+        if location_name == "NA":
+            continue
 
         # Check if the (activityName, locName) pair is valid
         if (activity_name, location_name) not in valid_pairs:
@@ -187,6 +195,10 @@ def test_mandatory_leads(schedule_df, leads_mapping, staff_df, activity_df):
     grouped = schedule_df.groupby(["time_slot", "group", "activity"], observed=False)
 
     for (ts, grp, act), sub_df in grouped:
+        # skip for inspection (location = "NA")
+        if grp == "NA":
+            continue
+
         # sub_df has all rows for staff assigned to (ts, grp, act)
         # Check if at least one staff is a valid lead
 
@@ -245,6 +257,10 @@ def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, sta
         time_slot = row["time_slot"]
         group_id = row["group"]
 
+        # skip for inspection (everyone can do it)
+        if activity_name == "inspection":
+            continue
+
         # Get the staff_id from staff_name
         staff_id_series = staff_df.loc[staff_df["staffName"] == staff_name, "staffID"]
         if staff_id_series.empty:
@@ -287,7 +303,64 @@ def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, sta
 
     return violations
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule):
+def test_inspection_daily(schedule_df, inspection_slots):
+    """
+    Test to ensure that inspection is assigned to a counselor in the 1st period every day
+    and not assigned outside the 1st period.
+    """
+    violations = []
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+    for day in days:
+        # Define the designated inspection time slot for the day
+        designated_slot = (day, 1)  # Period 1
+
+        # Filter schedule_df for inspections in the designated slot
+        inspections_in_designated = schedule_df[
+            (schedule_df['time_slot'] == designated_slot) &
+            (schedule_df['activity'] == 'inspection')
+        ]
+
+        # One staff assigned to inspection
+        if len(inspections_in_designated['staff'].unique()) < 1:
+            violations.append({
+                "day": day,
+                "time_slot": designated_slot,
+                "message": f"No staff assigned to inspection on {day} Period 1."
+            })
+
+        # Check that exactly one inspection is assigned in the designated slot
+        inspection_count = len(inspections_in_designated)
+        if inspection_count != 1:
+            violations.append({
+                "day": day,
+                "time_slot": designated_slot,
+                "message": f"Expected exactly 1 inspection on {day} Period 1, found {inspection_count}."
+            })
+
+        # Now, check that no inspections are assigned outside the designated slot
+        # Define the non-designated slots for the day (Periods 2 and 3)
+        non_designated_slots = [(day, period) for period in [2, 3]]
+
+        # Filter schedule_df for inspections in non-designated slots
+        inspections_outside_designated = schedule_df[
+            (schedule_df['time_slot'].isin(non_designated_slots)) &
+            (schedule_df['activity'] == 'inspection')
+        ]
+
+        # Check that no inspections are assigned outside the designated slot
+        if not inspections_outside_designated.empty:
+            for _, row in inspections_outside_designated.iterrows():
+                violations.append({
+                    "day": day,
+                    "time_slot": row['time_slot'],
+                    "message": "Inspection assigned outside designated inspection slot (Period 1)."
+                })
+
+    return violations
+
+
+def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots):
     """
     Run all test functions on the generated schedule.
     """
@@ -298,9 +371,10 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_tim
     location_violations = test_location_non_overlap(schedule_df)
     location_activity_violations = test_location_activity_match(schedule_df, location_options_df)
     activity_violations = test_activity_exclusivity(schedule_df)
-    group_wf_violations = test_group_activity_count_with_waterfront(schedule_df, group_ids, waterfront_schedule)
+    group_wf_violations = test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group_ids, waterfront_schedule)
     leads_violations = test_mandatory_leads(schedule_df, leads_mapping, staff_df, activity_df)
     no_leads_or_assists_violations = test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, staff_df, activity_df)
+    inspection_violations = test_inspection_daily(schedule_df, inspection_slots)
 
     print("Test Results:")
     if staff_overlap_violations:
@@ -338,6 +412,10 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_tim
     else:
         print("Only Leads/Assists: PASSED")
     if group_wf_violations:
-        print("Group Activity/Waterfront Violations:", group_wf_violations)
+        print("Group Activity Count per Period Violations:", group_wf_violations)
     else:
-        print("Group Activity/Waterfront Count: PASSED")
+        print("Group Activity Count per Period: PASSED")
+    if inspection_violations:
+        print("Inspection Violations:", inspection_violations)
+    else:
+        print("Inspection: PASSED")
