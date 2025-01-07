@@ -67,7 +67,7 @@ class DataManager:
         """
         column_requirements = {
             "staff": ["staffID", "staffName"],
-            "activity": ["activityID", "activityName", "numStaffReq", "duration", "category", "perWeek"],
+            "activity": ["activityID", "activityName", "numStaffReq", "duration"],
             "certs": ["certID", "certName", "activityID", "numStaffReq"],
             "leads": ["staffID", "activityID"],
             "assists": ["staffID", "activityID"],
