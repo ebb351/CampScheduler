@@ -24,7 +24,7 @@ def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -61,29 +61,46 @@ class Scheduler:
         # Create the model
         model = cp_model.CpModel()
 
-        # Decision variables
-        x = {} # Group specific staff assignment: x[i: staff, j: activity, k: time slot]
-        y = {} # Group specific location assignment y[l: location, j: activity, k: time slot ]
-        t = {} # Total staff assigned to activity j, k, g
-        z = {} # if z == 1, then T_jkg >= numStaffReq[j], else T_jkg == 0
-        both_gt = {} # Bool for both golf and tennis scheduled in same time slot
+        # DECISION VARIABLES:
+        # staff_assign[i, j, k, g]: Whether staff i is assigned to activity j, 
+        # in time slot k, for group g
+        staff_assign = {}
+
+        # loc_assign[l, j, k, g]: Whether location l is assigned to activity j,
+        # in time slot k, for group g
+        loc_assign = {}
+
+        # staff_count[j, k, g]: The integer (0..N) of how many staff 
+        # are assigned to activity j, time slot k, group g
+        staff_count = {}
+
+        # activity_chosen[j, k, g]: Boolean => if the activity j is "chosen" 
+        # for time slot k, group g (meaning staff_count >= min req).
+        activity_chosen = {}
+
+        # golf_tennis_slot[k, g]: Boolean => "both golf & tennis simultaneously 
+        # in slot k for group g"
+        golf_tennis_slot = {}
+
+        # inspection_slot[i,k]: Boolean => "staff i is assigned to inspection in time_slot k"
+        inspection_slot = {}
 
         for g in group_ids:
             for i in staff_ids:
                 for j in activity_ids:
                     for k in self.time_slots:
-                        x[i,j,k, g] = model.NewBoolVar(f'x[{i},{j},{k[0]}, {k[1]},{g}]')
+                        staff_assign[i,j,k, g] = model.NewBoolVar(f'x[{i},{j},{k[0]}, {k[1]},{g}]')
 
             for l in location_ids:
                 for j in activity_ids:
                     for k in self.time_slots:
-                        y[l,j,k, g] = model.NewBoolVar(f'y[{l},{j},{k[0]}, {k[1]},{g}]')
+                        loc_assign[l,j,k, g] = model.NewBoolVar(f'y[{l},{j},{k[0]}, {k[1]},{g}]')
 
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
                     # Create an IntVar for total staff assigned to activity j, k, g
-                    t[j,k,g] = model.NewIntVar(
+                    staff_count[j,k,g] = model.NewIntVar(
                         0,
                         len(staff_ids),
                         f't[{j},{k[0]}, {k[1]},{g}]'
@@ -91,38 +108,45 @@ class Scheduler:
 
                     # Sum of x[i,j,k,g] must match t[j,k,g]
                     model.Add(
-                        t[j,k,g] == sum(x[i,j,k,g] for i in staff_ids)
+                        staff_count[j,k,g] == sum(staff_assign[i,j,k,g] for i in staff_ids)
                     )
 
                     # Create a BoolVar for "activity j chosen in (k,g)"
-                    z[j,k,g] = model.NewBoolVar(
+                    activity_chosen[j,k,g] = model.NewBoolVar(
                         f'z[{j},{k[0]}, {k[1]},{g}]'
                     )
 
         for g in group_ids:
             for k in self.time_slots:
-                both_gt[k,g] = model.NewBoolVar(f"both_golf_tennis_{k}_{g}")
+                golf_tennis_slot[k,g] = model.NewBoolVar(f"both_golf_tennis_{k}_{g}")
+
+        for i in staff_ids:
+            for k in time_slots:
+                if k[1] == 1: # period 1
+                    inspection_slot[i,k] = model.NewBoolVar(f"inspection_{i}_{k}")
+                else:
+                    pass # no inspection in period 2 or 3
 
         # CONSTRAINTS:
         # Activity exclusivity across groups in the same time slot
         for j in activity_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(z[j,k,g] for g in group_ids) <= 1
+                    sum(activity_chosen[j,k,g] for g in group_ids) <= 1
                 )
 
         # Staff non-overlap across groups in the same time slot
         for i in staff_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(x[i,j,k,g] for j in activity_ids for g in group_ids) <= 1
+                    sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) <= 1
                 )
 
         # Location non-overlap across groups in the same time slot
         for l in location_ids:
             for k in self.time_slots:
                 model.Add(
-                    sum(y[l,j,k,g] for j in activity_ids for g in group_ids) <=1
+                    sum(loc_assign[l,j,k,g] for j in activity_ids for g in group_ids) <= 1
                 )
 
         # Activities only take place in a valid location
@@ -135,8 +159,8 @@ class Scheduler:
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
-                    valid_loc_vars = [y[l,j,k,g] for l in valid_locations.get(j, [])]
-                    model.Add(sum(valid_loc_vars) == z[j,k,g])
+                    valid_loc_vars = [loc_assign[l,j,k,g] for l in valid_locations.get(j, [])]
+                    model.Add(sum(valid_loc_vars) == activity_chosen[j,k,g])
 
         # Group-specific activity assignment (4 activities per time slot)
         for g in group_ids:
@@ -146,12 +170,12 @@ class Scheduler:
 
                 # If k is NOT a waterfront slot, sum(...)=4 only if both_gt=0, if both_gt=1, sum(...)=2
                 model.Add(
-                    sum(z[j,k,g] for j in activity_ids) == 4
-                ).OnlyEnforceIf(both_gt[k, g].Not())
+                    sum(activity_chosen[j,k,g] for j in activity_ids) == 4
+                ).OnlyEnforceIf(golf_tennis_slot[k, g].Not())
 
                 model.Add(
-                    sum(z[j,k,g] for j in activity_ids) == 2
-                ).OnlyEnforceIf(both_gt[k, g])
+                    sum(activity_chosen[j,k,g] for j in activity_ids) == 2
+                ).OnlyEnforceIf(golf_tennis_slot[k, g])
 
 
 
@@ -161,26 +185,35 @@ class Scheduler:
                 for k in self.time_slots:
                     # If activity j is chosen (z=1), pick exactly one location
                     model.Add(
-                        sum(y[l,j,k,g] for l in location_ids) == 1
-                    ).OnlyEnforceIf(z[j,k,g])
+                        sum(loc_assign[l,j,k,g] for l in location_ids) == 1
+                    ).OnlyEnforceIf(activity_chosen[j,k,g])
 
                     # If not chosen, no location is assigned
                     model.Add(
-                        sum(y[l,j,k,g] for l in location_ids) == 0
-                    ).OnlyEnforceIf(z[j,k,g].Not())
+                        sum(loc_assign[l,j,k,g] for l in location_ids) == 0
+                    ).OnlyEnforceIf(activity_chosen[j,k,g].Not())
 
                     # For each location, if y=1 --> T>0, if z=0 --> y=0
                     for l in location_ids:
-                        model.Add(t[j,k,g] > 0).OnlyEnforceIf(y[l,j,k,g])
-                        model.Add(y[l,j,k,g] == 0).OnlyEnforceIf(z[j,k,g].Not())
+                        model.Add(staff_count[j,k,g] > 0).OnlyEnforceIf(loc_assign[l,j,k,g])
+                        model.Add(loc_assign[l,j,k,g] == 0).OnlyEnforceIf(activity_chosen[j,k,g].Not())
 
         # Staff availability
+        # For activities
         for i in staff_ids:
             unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
             for k in unavailable_time_slots:
                 for j in activity_ids:
                     for g in group_ids:
-                        model.Add(x[i, j, k, g] == 0)
+                        model.Add(staff_assign[i, j, k, g] == 0)
+
+        # For inspection
+        for i in staff_ids:
+            unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
+            for k in unavailable_time_slots:
+                if k in inspection_slots:
+                    model.Add(inspection_slot[i,k] == 0)
+
 
         # Ensure min required staff assigned to each activity
         for g in group_ids:
@@ -192,8 +225,8 @@ class Scheduler:
                         "numStaffReq"
                     ].values[0]
 
-                    model.Add(t[j, k, g] >= required_staff).OnlyEnforceIf(z[j, k, g])
-                    model.Add(t[j, k, g] == 0).OnlyEnforceIf(z[j, k, g].Not())
+                    model.Add(staff_count[j, k, g] >= required_staff).OnlyEnforceIf(activity_chosen[j, k, g])
+                    model.Add(staff_count[j, k, g] == 0).OnlyEnforceIf(activity_chosen[j, k, g].Not())
 
         # Staff can only be assigned if they can lead or assist
         for g in group_ids:
@@ -203,25 +236,25 @@ class Scheduler:
                 for j in activity_ids:
                     for k in self.time_slots:
                         if j not in can_participate_set:
-                            model.Add(x[i, j, k, g] == 0)
+                            model.Add(staff_assign[i, j, k, g] == 0)
 
         # At least one staff assigned who can lead each activity
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
                     leads_assigned = sum(
-                        x[i, j, k, g] for i in staff_ids if j in leads_mapping.get(i, [])
+                        staff_assign[i, j, k, g] for i in staff_ids if j in leads_mapping.get(i, [])
                     )
                     # if z=1 --> leads_assigned >=1
-                    model.Add(leads_assigned >= 1).OnlyEnforceIf(z[j, k, g])
+                    model.Add(leads_assigned >= 1).OnlyEnforceIf(activity_chosen[j, k, g])
 
         # Waterfront scheduled at same times each week per group, only activity in that time slot
         for g, timeslots in waterfront_schedule.items():
             for k in timeslots:
                 # 1) Must schedule waterfront
-                model.Add(z[waterfront_id, k, g] == 1)
+                model.Add(activity_chosen[waterfront_id, k, g] == 1)
                 # 2) No other activities in that time slot
-                model.Add(sum(z[j,k,g] for j in activity_ids) == 1)
+                model.Add(sum(activity_chosen[j,k,g] for j in activity_ids) == 1)
 
         # Golf and Tennis only scheduled at the same time slot
         # If we choose "both golf & tennis" in slot k,g => sum of z[...] = 2
@@ -231,23 +264,58 @@ class Scheduler:
             for k in time_slots:
                 # If both_gt=1 => golf & tennis are chosen => sum(z[j,k,g])=2
                 model.Add(
-                    sum(z[j, k, g] for j in activity_ids) == 2
-                ).OnlyEnforceIf(both_gt[k, g])
+                    sum(activity_chosen[j, k, g] for j in activity_ids) == 2
+                ).OnlyEnforceIf(golf_tennis_slot[k, g])
 
                 # If both_gt=0 => we can't have BOTH golf & tennis
                 # That doesn't necessarily forbid golf alone or tennis alone,
                 # so we strictly link them:
 
                 # We also want: both_gt=1 <=> z[golf_id,k,g] & z[tennis_id,k,g]
-                model.Add(z[golf_id, k, g] + z[tennis_id, k, g] == 2).OnlyEnforceIf(both_gt[k, g])
-                model.Add(z[golf_id, k, g] + z[tennis_id, k, g] <= 1).OnlyEnforceIf(both_gt[k, g].Not())
+                model.Add(activity_chosen[golf_id, k, g] + activity_chosen[tennis_id, k, g] == 2).OnlyEnforceIf(golf_tennis_slot[k, g])
+                model.Add(activity_chosen[golf_id, k, g] + activity_chosen[tennis_id, k, g] <= 1).OnlyEnforceIf(golf_tennis_slot[k, g].Not())
 
         # Golf and Tennis at least twice a week
         # For each group, sum of both_gt >= 2
         for g in group_ids:
             model.Add(
-                sum(both_gt[k, g] for k in time_slots) >= 2
+                sum(golf_tennis_slot[k, g] for k in time_slots) >= 2
             )
+
+        # Golf and Tennis not scheduled twice for a group on the same day
+        day_map = {}  # day_map[k] = "Monday"/"Tuesday"/...
+        for k in time_slots:
+            day_map[k] = k[0]
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        for g in group_ids:
+            for d in days:
+                # gather all time slots for that day
+                day_slots = [k for k in time_slots if day_map[k] == d]
+
+                # at most one slot in that day for golf + tennis
+                model.Add(
+                    sum(golf_tennis_slot[k, g] for k in day_slots) <= 1
+                )
+
+        # One staff assigned to inspection in each days period 1
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        for day in days:
+            # gather the time slot (day,1)
+            day_slot = (day,1)
+            # enforce one staff
+            model.Add(
+                sum(inspection_slot[i,day_slot] for i in staff_ids) == 1
+            )
+
+        # Staff can't do inspection + normal activity at the same time
+        for i in staff_ids:
+            for k in time_slots:
+                if k[1] == 1:
+                    model.Add(
+                        sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) + inspection_slot[i,k] <= 1
+                    )
+                else:
+                    pass # no inspection --> no overlap constraint needed
 
         # Empty objective function (currently no optimization)
         model.Minimize(0)
@@ -265,7 +333,7 @@ class Scheduler:
                     for j in activity_ids:
                         for k in self.time_slots:
                             # Collect all staff i assigned
-                            assigned_staff_ids = [i for i in staff_ids if solver.Value(x[i, j, k, g]) == 1]
+                            assigned_staff_ids = [i for i in staff_ids if solver.Value(staff_assign[i, j, k, g]) == 1]
 
                             if assigned_staff_ids:
                                 # That means (j,k,g) is actually chosen (z=1) and has staff
@@ -273,14 +341,16 @@ class Scheduler:
                                 # Find assigned location exactly once
                                 assigned_location = None
                                 for l in location_ids:
-                                    if solver.Value(y[l, j, k, g]) == 1:
+                                    if solver.Value(loc_assign[l, j, k, g]) == 1:
                                         assigned_location = l
                                         break
 
                                 # Convert staff IDs to staff names
                                 assigned_staff_names = []
                                 for i in assigned_staff_ids:
-                                    name = self.staff_df.loc[self.staff_df["staffID"] == i, "staffName"].values[0]
+                                    name = self.staff_df.loc[
+                                        self.staff_df["staffID"] == i, "staffName"
+                                    ].values[0]
                                     assigned_staff_names.append(name)
 
                                 # Convert IDs to activity/location names
@@ -300,6 +370,24 @@ class Scheduler:
                                     "time_slot": k,
                                     "group": g
                                 })
+
+                # Collect inspection assignment
+                for k in inspection_slots:
+                    assigned_inspection_id = [i for i in staff_ids if solver.Value(inspection_slot[i,k]) == 1]
+                    if assigned_inspection_id:
+                        # Find staff name
+                        name = self.staff_df.loc[
+                            self.staff_df["staffID"] == assigned_inspection_id[0],
+                            "staffName"
+                        ].values[0]
+
+                        schedule.append({
+                            "activity": "inspection",
+                            "staff": [name],
+                            "location": "NA",
+                            "time_slot": k,
+                            "group": "NA"
+                        })
 
                 return schedule
         else:
@@ -363,7 +451,16 @@ if __name__ == "__main__":
         4: [("Monday", 1), ("Wednesday", 1), ("Thursday", 1), ("Friday", 1)]
     }
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule)
+    inspection_slots = [
+        ("Monday", 1),
+        ("Tuesday", 1),
+        ("Wednesday", 1),
+        ("Thursday", 1),
+        ("Friday", 1),
+        ("Saturday", 1)
+    ]
+
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots)
     try:
         schedule = scheduler.solve()
 
@@ -391,7 +488,7 @@ if __name__ == "__main__":
 
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
-        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule)
+        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots)
 
     except ValueError as e:
         print(f"Error: {e}")
