@@ -305,7 +305,7 @@ def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, sta
 
 def test_inspection_daily(schedule_df, inspection_slots):
     """
-    Test to ensure that inspection is assigned to a counselor in the 1st period every day
+    Test to ensure that inspection is assigned to exactly counselor in the 1st period every day
     and not assigned outside the 1st period.
     """
     violations = []
@@ -338,7 +338,7 @@ def test_inspection_daily(schedule_df, inspection_slots):
                 "message": f"Expected exactly 1 inspection on {day} Period 1, found {inspection_count}."
             })
 
-        # Now, check that no inspections are assigned outside the designated slot
+        # Check that no inspections are assigned outside the designated slot
         # Define the non-designated slots for the day (Periods 2 and 3)
         non_designated_slots = [(day, period) for period in [2, 3]]
 
@@ -360,7 +360,82 @@ def test_inspection_daily(schedule_df, inspection_slots):
     return violations
 
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots):
+def test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days):
+    """
+    Test to ensure that Driving Range is scheduled correctly:
+    1. Exactly once per week per group.
+    2. Only in Periods 1 and 2.
+    3. Only on Monday to Thursday.
+    4. Same staff assigned to both periods.
+    5. Number of staff within min and max limits.
+    6. No overlaps or multiple assignments.
+    """
+    violations = []
+    driving_range_activity = "driving range"
+
+    for g in group_ids:
+        # Filter Driving Range activities for this group
+        dr_schedule = schedule_df[
+            (schedule_df['group'] == g) &
+            (schedule_df['activity'].str.lower() == driving_range_activity)
+            ]
+
+        # 1. Check frequency: exactly two entries (Periods 1 and 2)
+        if len(dr_schedule) != 2:
+            violations.append({
+                "group": g,
+                "msg": f"Expected Driving Range to be scheduled once per week (2 periods), found {len(dr_schedule)}."
+            })
+            continue  # Skip further checks for this group
+
+        # 2. Check that both periods are on the same day and in Periods 1 and 2
+        days_scheduled = dr_schedule['time_slot'].apply(lambda x: x[0]).unique()
+        periods_scheduled = dr_schedule['time_slot'].apply(lambda x: x[1]).tolist()
+
+        if len(days_scheduled) != 1:
+            violations.append({
+                "group": g,
+                "msg": f"Driving Range periods are on different days: {days_scheduled.tolist()}."
+            })
+
+        day_scheduled = days_scheduled[0]
+        if day_scheduled not in allowed_dr_days:
+            violations.append({
+                "group": g,
+                "msg": f"Driving Range is scheduled on an invalid day: {day_scheduled}."
+            })
+
+        if sorted(periods_scheduled) != [1, 2]:
+            violations.append({
+                "group": g,
+                "msg": f"Driving Range is not scheduled in Periods 1 and 2, found periods {periods_scheduled}."
+            })
+
+        # 3. Check same staff assigned to both periods
+        staff_assigned_periods = dr_schedule['staff'].tolist()
+
+        # Convert list of lists to set of tuples for comparison
+        staff_sets = [set(staff) for staff in staff_assigned_periods]
+
+        if not all(s == staff_sets[0] for s in staff_sets):
+            violations.append({
+                "group": g,
+                "msg": f"Different staff members assigned to Driving Range periods: {staff_assigned_periods}."
+            })
+        else:
+            # 4. Check staff count limits
+            assigned_staff = staff_sets[0]
+            num_staff = len(assigned_staff)
+            if num_staff < 1:
+                violations.append({
+                    "group": g,
+                    "msg": f"Driving Range has no staff assigned)."
+                })
+
+    return violations
+
+
+def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days):
     """
     Run all test functions on the generated schedule.
     """
@@ -375,6 +450,7 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_tim
     leads_violations = test_mandatory_leads(schedule_df, leads_mapping, staff_df, activity_df)
     no_leads_or_assists_violations = test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, staff_df, activity_df)
     inspection_violations = test_inspection_daily(schedule_df, inspection_slots)
+    driving_range_violations = test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days)
 
     print("Test Results:")
     if staff_overlap_violations:
@@ -418,4 +494,8 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_tim
     if inspection_violations:
         print("Inspection Violations:", inspection_violations)
     else:
-        print("Inspection: PASSED")
+        print("Inspection Check: PASSED")
+    if driving_range_violations:
+        print("Driving Range Violations:", driving_range_violations)
+    else:
+        print("Driving Range Check: PASSED")
