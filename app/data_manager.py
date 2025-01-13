@@ -76,7 +76,7 @@ class DataManager:
             "locOptions": ["activityID", "locID"],
             "groups": ["groupID"],
             "offDays": ["staffID", "staffName", "date"],
-            "trips": ["staffID", "staffName", "date", "start_period", "end_period"]
+            "trips": ["trip_name","staffID", "staffName", "date", "start_period", "end_period"]
         }
 
         for key, required_columns in column_requirements.items():
