@@ -26,6 +26,9 @@ def test_location_non_overlap(schedule_df):
     """
     violations = []
 
+    # Exclude placeholder location "NA"
+    schedule_df = schedule_df[schedule_df["location"] != "NA"]
+
     # We'll group by (time_slot, location).
     # Then for each group, we gather distinct (group, activity) combos.
     grouped = schedule_df.groupby(["time_slot", "location"], observed=False)
@@ -257,8 +260,8 @@ def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, sta
         time_slot = row["time_slot"]
         group_id = row["group"]
 
-        # skip for inspection (everyone can do it)
-        if activity_name == "inspection":
+        # skip for non-standard activities (inspection, trips)
+        if activity_name not in activity_name_to_id or row["group"] == "NA":
             continue
 
         # Get the staff_id from staff_name
