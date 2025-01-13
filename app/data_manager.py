@@ -43,7 +43,7 @@ class DataManager:
             "locOptions": "locOptions.csv",
             "groups": "groups.csv",
             "offDays": "offDays.csv",
-            "tripsOOC": "tripsOOC.csv",
+            "trips": "trips.csv",
         }
 
         for key, file_name in csv_files.items():
@@ -76,7 +76,7 @@ class DataManager:
             "locOptions": ["activityID", "locID"],
             "groups": ["groupID"],
             "offDays": ["staffID", "staffName", "date"],
-            "tripsOOC": ["staffID", "staffName", "date", "duration"]
+            "trips": ["staffID", "staffName", "date", "start_period", "end_period"]
         }
 
         for key, required_columns in column_requirements.items():

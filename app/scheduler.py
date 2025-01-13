@@ -139,7 +139,10 @@ class Scheduler:
                 for i in staff_ids:
                     driving_range_staff[g, day, i] = model.NewBoolVar(f"driving_range_g{g}_{day}_{i}")
 
+        ##############
         # CONSTRAINTS:
+        ##############
+
         # Activity exclusivity across groups in the same time slot
         for j in activity_ids:
             for k in self.time_slots:
@@ -528,7 +531,7 @@ if __name__ == "__main__":
     location_options_df = manager.get_dataframe("locOptions")
     group_df = manager.get_dataframe("groups")
     off_days_df = manager.get_dataframe("offDays")
-    trips_ooc_df = manager.get_dataframe("tripsOOC")
+    trips_df = manager.get_dataframe("trips")
     leads_df = manager.get_dataframe("leads")
     assists_df = manager.get_dataframe("assists")
 
@@ -540,7 +543,7 @@ if __name__ == "__main__":
     off_days = off_days_df.groupby("staffID")["date"].apply(list).to_dict()
     staff_off_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in off_days.items()}
 
-    trips = trips_ooc_df.groupby("staffID")["date"].apply(list).to_dict()
+    trips = trips_df.groupby("staffID")["date"].apply(list).to_dict()
     staff_trip_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in trips.items()}
 
     # Combine unavailable time slots for each staff member
