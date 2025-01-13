@@ -2,24 +2,31 @@ from ortools.sat.python import cp_model
 from data_manager import DataManager
 from schedule_tests import run_tests
 from datetime import datetime
+import calendar
 import pandas as pd
 
-def map_dates_to_time_slots(dates, base_date = "01/06/2025"):
+def map_dates_to_time_slots(dates):
     """
     Map dates to corresponding fay of the week in the time slot format
     :param dates: List of dates in MM/DD/YY format
     :param base_date: first day of the week in MM/DD/YY format (e.g. Monday)
     :return: Dictionary mapping dates to time slots
     """
-    base_date = datetime.strptime(base_date, "%m/%d/%Y")
     time_slots_map = []
 
     for date_str in dates:
-        date = datetime.strptime(date_str, "%m/%d/%Y")
-        day_offset = (date - base_date).days
-        day_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][day_offset % 6]
-        time_slots = [(day_of_week, period) for period in range(1,4)]
-        time_slots_map.extend([(day_of_week, period) for period in range(1,4)])
+        date_dt = datetime.strptime(date_str, "%m/%d/%Y")
+        # day_of_week_number is 0 for Monday, 6 for Sunday
+        day_of_week_number = date_dt.weekday()
+        day_name = calendar.day_name[day_of_week_number]
+
+        # Skip sundays since never on schedule
+        if day_name == "Sunday":
+            continue
+
+        # Otherwise, build the three time slots
+        for period in range(1,4):
+            time_slots_map.append((day_name, period))
 
     return time_slots_map
 
