@@ -31,7 +31,8 @@ def map_dates_to_time_slots(dates):
     return time_slots_map
 
 class Scheduler:
-    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days):
+    def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
+                 staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -405,6 +406,17 @@ class Scheduler:
                         # Staff i cannot be assigned to Driving Range on this day
                         model.Add(driving_range_staff[g, day, i] == 0)
 
+        # Disallow normal activities if staff is on a trip in that time slot
+        for i in staff_ids:
+            trips_for_staff = staff_trips.get(i,[])
+            for (k, trip_name) in trips_for_staff:
+                # k is (day_of_week, period)
+                # staff i cannot be assigned to any activity j in that time slot for any group g
+                model.Add(
+                    sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) == 0
+                )
+                if k in inspection_slots:
+                    model.Add(inspection_slot[i, k] == 0)
 
         # OBJECTIVE FUNCTION:
         # Empty objective function (currently no optimization)
@@ -518,6 +530,39 @@ class Scheduler:
                             "group": "NA"
                         })
 
+                # Extract trip assignments
+                trip_assignments = {} # key = (trip_name, slot), value = list of staff IDs
+
+                # Collect staff for each trip
+                for i in staff_ids:
+                    if i not in staff_trips:
+                        continue
+                    trips_for_staff = staff_trips.get(i, [])
+                    for (slot, trip_name) in trips_for_staff:
+                        key = (trip_name, slot)
+                        if key not in trip_assignments:
+                            trip_assignments[key] = []
+                        trip_assignments[key].append(i)
+
+                # Build single schedule row per (trip_name, slot)
+                for (trip_name, slot), staff_list in trip_assignments.items():
+                    # Convert each staffID to a name
+                    staff_names = []
+                    for staff_id in staff_list:
+                        name = self.staff_df.loc[
+                            self.staff_df["staffID"] == staff_id,
+                            "staffName"
+                        ].values[0]
+                        staff_names.append(name)
+
+                    schedule.append({
+                        "activity": trip_name,
+                        "staff": staff_names,
+                        "location": "NA",
+                        "time_slot": slot,
+                        "group": "NA"
+                    })
+
                 return schedule
         else:
             raise ValueError("No feasible solution found.")
@@ -548,18 +593,39 @@ if __name__ == "__main__":
 
     # Map dates to time slots for off_days and trips_ooc
     off_days = off_days_df.groupby("staffID")["date"].apply(list).to_dict()
-    staff_off_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in off_days.items()}
-
-    trips = trips_df.groupby("staffID")["date"].apply(list).to_dict()
-    staff_trip_time_slots = {staff_id: map_dates_to_time_slots(dates) for staff_id, dates in trips.items()}
+    staff_off_time_slots = {
+        staff_id: map_dates_to_time_slots(dates)
+        for staff_id, dates in off_days.items()
+    }
 
     # Combine unavailable time slots for each staff member
-    staff_unavailable_time_slots = {}
+    # TODO replace staff_unavailable_time_slots with staff_off_time_slots bc just duplicating
+    staff_unavailable_time_slots = staff_off_time_slots
 
-    for staff_id in set(staff_off_time_slots.keys()).union(staff_trip_time_slots.keys()):
-        off_time_slots = staff_off_time_slots.get(staff_id, [])
-        trip_time_slots = staff_trip_time_slots.get(staff_id, [])
-        staff_unavailable_time_slots[staff_id] = set(off_time_slots).union(trip_time_slots)
+    # Extract trip assignments mapping staff to trips
+    staff_trips = {}
+
+    for idx, row in trips_df.iterrows():
+        staff_id = row["staffID"]
+        trip_name = row["trip_name"]
+        date_str = row["date"] # in MM/DD/YYYY
+        start_period = row["start_period"]
+        end_period = row["end_period"]
+
+        # Convert date_str --> day_of_week (e.g. "Monday")
+        date_dt = datetime.strptime(date_str, "%m/%d/%Y")
+        dow_number = date_dt.weekday()
+        dow_name = calendar.day_name[dow_number]
+
+        # Build partial-day time slots
+        trip_slots = [(dow_name, p) for p in range(start_period, end_period+1)]
+
+        if staff_id not in staff_trips:
+            staff_trips[staff_id] = []
+
+        # Store as ((day_of_week, period), trip_name)
+        for slot in trip_slots:
+            staff_trips[staff_id].append((slot, trip_name))
 
     # Extract Group IDs
     group_ids = group_df["groupID"].tolist()
@@ -591,7 +657,8 @@ if __name__ == "__main__":
 
     allowed_dr_days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
 
-    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots, staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days)
+    scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
+                          staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips)
     try:
         schedule = scheduler.solve()
 
