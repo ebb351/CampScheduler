@@ -62,7 +62,6 @@ def test_activity_exclusivity(schedule_df):
             violations.append((ts, act, distinct_groups.tolist()))
     return violations
 
-
 def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group_ids, waterfront_schedule):
     """
         For each group, each time_slot:
@@ -144,12 +143,12 @@ def test_location_activity_match(schedule_df, loc_options_df):
             })
     return violations
 
-def test_staff_availability(schedule_df, staff_unavailable_time_slots, staff_df):
+def test_staff_availability(schedule_df, staff_off_time_slots, staff_df):
     """
     Test to ensure no staff assigned to activities during unavailable time slots
     :param schedule_df: List of scheduled activities, each containing:
                      {"activity": ..., "staff": ..., "location": ..., "time_slot": ..., "group": ...}
-    :param staff_unavailable_time_slots: Dictionary mapping staffID to a list of unavailable time slots
+    :param staff_off_time_slots: Dictionary mapping staffID to a list of unavailable time slots
     :param staff_df: DataFrame containing staff information (staffID, staffName)
     """
     violations = []
@@ -168,8 +167,8 @@ def test_staff_availability(schedule_df, staff_unavailable_time_slots, staff_df)
         staff_id = sid_series.iloc[0]
 
         # Now staff_id is a single integer, so you can do:
-        if staff_id in staff_unavailable_time_slots:
-            if time_slot in staff_unavailable_time_slots[staff_id]:
+        if staff_id in staff_off_time_slots:
+            if time_slot in staff_off_time_slots[staff_id]:
                 violations.append({
                     "staff": staff_name,
                     "time_slot": time_slot
@@ -438,14 +437,14 @@ def test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days):
     return violations
 
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days):
+def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days):
     """
     Run all test functions on the generated schedule.
     """
 
     print("Running Tests...")
     staff_overlap_violations = test_staff_non_overlap(schedule_df)
-    staff_availability_violations = test_staff_availability(schedule_df, staff_unavailable_time_slots, staff_df)
+    staff_availability_violations = test_staff_availability(schedule_df, staff_off_time_slots, staff_df)
     location_violations = test_location_non_overlap(schedule_df)
     location_activity_violations = test_location_activity_match(schedule_df, location_options_df)
     activity_violations = test_activity_exclusivity(schedule_df)

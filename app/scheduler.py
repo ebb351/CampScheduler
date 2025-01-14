@@ -32,7 +32,7 @@ def map_dates_to_time_slots(dates):
 
 class Scheduler:
     def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
-                 staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips):
+                 staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips):
         """
         Initialize the Scheduler.
         :param staff_df: List of staff names and IDs
@@ -40,7 +40,7 @@ class Scheduler:
         :param location_df: List of location names and IDs
         :param group_df: List of group IDs
         :param time_slots: List of available time slots
-        :param staff_unavailable_time_slots: Dictionary mapping staff IDs to unavailable time slots
+        :param staff_off_time_slots: Dictionary mapping staff IDs to unavailable time slots
         """
         self.staff_df = staff_df
         self.activity_df = activity_df
@@ -48,7 +48,7 @@ class Scheduler:
         self.location_options_df = location_options_df
         self.group_df = group_df
         self.time_slots = time_slots
-        self.staff_unavailable_time_slots = staff_unavailable_time_slots
+        self.staff_off_time_slots = staff_off_time_slots
         self.leads_mapping = leads_mapping
         self.assists_mapping = assists_mapping
         self.waterfront_schedule = waterfront_schedule
@@ -99,6 +99,9 @@ class Scheduler:
         # driving_range_staff[g, day, i]: Boolean => "staff i is assigned to driving range for group g on day"
         driving_range_staff = {}
 
+        # trip_assign[i,k, trip_name] = 1 if staff i is assigned to trip_name at time k
+        trip_assign = {}
+
         for g in group_ids:
             for i in staff_ids:
                 for j in activity_ids:
@@ -146,6 +149,19 @@ class Scheduler:
                 driving_range_day[g, day] = model.NewBoolVar(f"driving_range_g{g}_{day}")
                 for i in staff_ids:
                     driving_range_staff[g, day, i] = model.NewBoolVar(f"driving_range_g{g}_{day}_{i}")
+
+        trip_name_list = set() # gather unique names from staff trips
+        for i in staff_ids:
+            if i not in staff_trips:
+                continue
+            for (k, trip_name) in staff_trips[i]:
+                trip_name_list.add(trip_name)
+
+        for i in staff_ids:
+            if i not in staff_trips:
+                continue
+            for (k, trip_name) in staff_trips[i]:
+                trip_assign[i,k, trip_name] = model.NewBoolVar(f"trip_{i}_{k[0]}_{k[1]}_{trip_name}")
 
         ##############
         # CONSTRAINTS:
@@ -222,7 +238,7 @@ class Scheduler:
         # Staff availability
         # For activities
         for i in staff_ids:
-            unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
+            unavailable_time_slots = self.staff_off_time_slots.get(i, [])
             for k in unavailable_time_slots:
                 for j in activity_ids:
                     for g in group_ids:
@@ -230,7 +246,7 @@ class Scheduler:
 
         # For inspection
         for i in staff_ids:
-            unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
+            unavailable_time_slots = self.staff_off_time_slots.get(i, [])
             for k in unavailable_time_slots:
                 if k in inspection_slots:
                     model.Add(inspection_slot[i,k] == 0)
@@ -401,22 +417,35 @@ class Scheduler:
                     ).OnlyEnforceIf(dr_day_var.Not())
 
                     # Staff must be available
-                    unavailable_time_slots = self.staff_unavailable_time_slots.get(i, [])
+                    unavailable_time_slots = self.staff_off_time_slots.get(i, [])
                     if k1 in unavailable_time_slots or k2 in unavailable_time_slots:
                         # Staff i cannot be assigned to Driving Range on this day
                         model.Add(driving_range_staff[g, day, i] == 0)
 
-        # Disallow normal activities if staff is on a trip in that time slot
+        # Force trip assignment if staff is on trip
         for i in staff_ids:
-            trips_for_staff = staff_trips.get(i,[])
-            for (k, trip_name) in trips_for_staff:
-                # k is (day_of_week, period)
-                # staff i cannot be assigned to any activity j in that time slot for any group g
+            if i not in staff_trips:
+                continue
+
+            for (k, trip_name) in staff_trips[i]:
+                model.Add(
+                    trip_assign[i,k, trip_name] == 1
+                )
+
+        # Disallow other assignment if staff is on trip in that time slot
+        for i in staff_ids:
+            if i not in staff_trips:
+                continue
+
+            for (k, trip_name) in staff_trips[i]:
                 model.Add(
                     sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) == 0
-                )
+                ).OnlyEnforceIf(trip_assign[i,k, trip_name])
+
                 if k in inspection_slots:
-                    model.Add(inspection_slot[i, k] == 0)
+                    model.Add(
+                        inspection_slot[i,k] == 0
+                    ).OnlyEnforceIf(trip_assign[i,k, trip_name])
 
         # OBJECTIVE FUNCTION:
         # Empty objective function (currently no optimization)
@@ -530,7 +559,7 @@ class Scheduler:
                             "group": "NA"
                         })
 
-                # Extract trip assignments
+                # EXTRACT TRIP ASSIGNMENTS
                 trip_assignments = {} # key = (trip_name, slot), value = list of staff IDs
 
                 # Collect staff for each trip
@@ -544,13 +573,21 @@ class Scheduler:
                             trip_assignments[key] = []
                         trip_assignments[key].append(i)
 
-                # Build single schedule row per (trip_name, slot)
-                for (trip_name, slot), staff_list in trip_assignments.items():
-                    # Convert each staffID to a name
+                # Collect staff in a dict: trip_rows[{trip_name, slot}] = [staff1, staff2, ...]
+                trip_rows = {}
+                for (trip_name, k), staff_list in trip_assignments.items():
+                    for i in staff_list:
+                        if solver.Value(trip_assign[i,k,trip_name]) == 1:
+                            if (trip_name, k) not in trip_rows:
+                                trip_rows[(trip_name, k)] = []
+                            trip_rows[(trip_name, k)].append(i)
+
+                # Build single entry per trip
+                for (trip_name, k), staff_ids in trip_rows.items():
                     staff_names = []
-                    for staff_id in staff_list:
+                    for i in staff_ids:
                         name = self.staff_df.loc[
-                            self.staff_df["staffID"] == staff_id,
+                            self.staff_df["staffID"] == i,
                             "staffName"
                         ].values[0]
                         staff_names.append(name)
@@ -559,7 +596,7 @@ class Scheduler:
                         "activity": trip_name,
                         "staff": staff_names,
                         "location": "NA",
-                        "time_slot": slot,
+                        "time_slot": k,
                         "group": "NA"
                     })
 
@@ -597,10 +634,6 @@ if __name__ == "__main__":
         staff_id: map_dates_to_time_slots(dates)
         for staff_id, dates in off_days.items()
     }
-
-    # Combine unavailable time slots for each staff member
-    # TODO replace staff_unavailable_time_slots with staff_off_time_slots bc just duplicating
-    staff_unavailable_time_slots = staff_off_time_slots
 
     # Extract trip assignments mapping staff to trips
     staff_trips = {}
@@ -658,7 +691,7 @@ if __name__ == "__main__":
     allowed_dr_days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
 
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
-                          staff_unavailable_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips)
+                          staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips)
     try:
         schedule = scheduler.solve()
 
@@ -686,7 +719,7 @@ if __name__ == "__main__":
 
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
-        run_tests(schedule_df, group_ids, location_options_df, staff_unavailable_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days)
+        run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days)
 
     except ValueError as e:
         print(f"Error: {e}")
