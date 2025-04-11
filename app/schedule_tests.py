@@ -1,20 +1,29 @@
 def test_staff_non_overlap(schedule_df):
     """
-    Each row now has (group, activity, time_slot, location, staff) with exactly one staff.
-    We want: In any given time_slot, a staff member cannot appear on two different activities.
+    Tests that each staff member is not assigned to multiple activities in the same time slot.
+    
+    A fundamental constraint in the schedule is that a staff member cannot be in two places
+    at once. This test verifies that no staff member is assigned to more than one unique 
+    (group, activity) combination in any given time slot.
+    
+    Validates Constraint 2: Staff non-overlap across activities and groups.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :return: List of violations, each as a tuple (time_slot, staff_name, counts_dict)
     """
     violations = []
 
-    # Group by (time_slot, staff), then count the distinct (group, activity).
+    # Group by (time_slot, staff) to find all assignments for eac
+    # h staff in each time slot
     grouped = schedule_df.groupby(["time_slot", "staff"], observed=False)
 
     for (ts, staff), sub_df in grouped:
-        # sub_df has all rows where this staff is assigned in this timeslot
-        # If staff is assigned to more than 1 distinct (group, activity) => violation
+        # Find all distinct group/activity combinations this staff is assigned to in this time slot
         distinct_acts = sub_df[["group", "activity"]].drop_duplicates()
+        
+        # If more than one distinct assignment exists, this is a violation
         if len(distinct_acts) > 1:
-            # Means staff is doing >1 unique activity in the same slot
-            # We can store how many or which ones if we want:
+            # Record the specific conflicting assignments
             counts = distinct_acts.value_counts().to_dict()
             violations.append((ts, staff, counts))
 
@@ -22,25 +31,32 @@ def test_staff_non_overlap(schedule_df):
 
 def test_location_non_overlap(schedule_df):
     """
-    No location is hosting >1 distinct (group, activity) combos in the same time_slot.
+    Tests that each location is not used by multiple activities in the same time slot.
+    
+    A location can only host one activity at a time. This test verifies that no location 
+    is assigned to more than one unique (group, activity) combination in any given time slot.
+    
+    Validates Constraint 3: Location non-overlap across activities and groups.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :return: List of violations, each as a tuple (time_slot, location, counts_dict)
     """
     violations = []
 
-    # Exclude placeholder location "NA"
+    # Exclude placeholder location "NA" (used for special activities like inspection)
     schedule_df = schedule_df[schedule_df["location"] != "NA"]
 
-    # We'll group by (time_slot, location).
-    # Then for each group, we gather distinct (group, activity) combos.
+    # Group by (time_slot, location) to find all assignments for each location in each time slot
     grouped = schedule_df.groupby(["time_slot", "location"], observed=False)
 
     for (ts, loc), sub_df in grouped:
-        # sub_df might have multiple staff rows for the same group/activity,
-        # so just find unique (group, activity).
+        # Find distinct group/activity combinations assigned to this location in this time slot
+        # (Multiple staff may be assigned to the same activity, so we need to find unique combinations)
         distinct_assignments = sub_df[["group","activity"]].drop_duplicates()
 
+        # If more than one distinct assignment exists, this is a violation
         if len(distinct_assignments) > 1:
-            # i.e. more than 1 distinct (group, activity) is using the same location
-            # at this time slot => violation
+            # Record the specific conflicting assignments
             combos = distinct_assignments.value_counts().to_dict()
             violations.append((ts, loc, combos))
 
@@ -48,66 +64,87 @@ def test_location_non_overlap(schedule_df):
 
 def test_activity_exclusivity(schedule_df):
     """
-    Each activity can only appear in one group per time_slot.
+    Tests that each activity is assigned to at most one group in each time slot.
+    
+    Activities are exclusive resources - only one group can do a particular activity
+    at a given time. This test verifies that no activity is assigned to multiple groups
+    in the same time slot.
+    
+    Validates Constraint 1: Activity exclusivity across groups in the same time slot.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :return: List of violations, each as a tuple (time_slot, activity, [group_list])
     """
     violations = []
 
-    # Group by (time_slot, activity). Then see how many distinct groups are using that (activity, time_slot).
+    # Group by (time_slot, activity) to find all group assignments for each activity in each time slot
     grouped = schedule_df.groupby(["time_slot", "activity"], observed=False)
 
     for (ts, act), sub_df in grouped:
+        # Find all distinct groups assigned to this activity in this time slot
         distinct_groups = sub_df["group"].drop_duplicates()
+        
+        # If more than one group is assigned to this activity, this is a violation
         if len(distinct_groups) > 1:
-            # That means multiple groups are using the same activity at once
             violations.append((ts, act, distinct_groups.tolist()))
+            
     return violations
 
 def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group_ids, waterfront_schedule):
     """
-        For each group, each time_slot:
-          1) If time_slot is in waterfront_schedule[g], expect exactly 1 distinct activity = 'waterfront'
-          2) Else if the distinct activities == {'golf', 'tennis'}, that's valid "golf+tennis" only
-          3) Otherwise, expect 3-4 distinct activities in that slot.
-        """
+    Tests that each group has the correct number of activities in each time slot.
+    
+    The schedule has specific rules for how many activities each group should have 
+    scheduled in each time slot:
+    1. In waterfront time slots: Exactly 1 activity ('waterfront')
+    2. In golf+tennis time slots: Exactly 2 activities ('golf' and 'tennis')
+    3. In all other time slots: Exactly 4 activities
+    
+    Validates Constraint 5: Group-specific activity assignment.
+    Validates Constraint 11: Waterfront scheduling.
+    Validates Constraint 12: Golf and Tennis pairing requirement.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param group_ids: List of group IDs
+    :param waterfront_schedule: Dictionary mapping group IDs to their waterfront time slots
+    :return: List of violations, each as a dictionary with details
+    """
     violations = []
 
-    # Group by (group, time_slot)
+    # Group by (group, time_slot) to analyze each group's activities in each time slot
     grouped = schedule_df.groupby(["group", "time_slot"], observed=False)
+    
     for (grp, ts), sub_df in grouped:
-        # skip for inspection (location = "NA"
+        # Skip inspection and other special activities with "NA" group
         if grp == "NA":
             continue
 
-        # sub_df is all rows for group=grp, time_slot=ts, each row = 1 staff
-        distinct_acts = sub_df["activity"].drop_duplicates()
+        # Get distinct activities assigned to this group in this time slot
+        distinct_acts = set(sub_df["activity"].drop_duplicates())
 
-        # Convert to a set for easy "in" checks
-        distinct_acts = set(distinct_acts)
-
-        # 1) Check if this is a waterfront slot
+        # CASE 1: Check waterfront slots (should be exactly one activity: 'waterfront')
         if ts in waterfront_schedule[grp]:
-            # This should be a "waterfront only" slot
             if len(distinct_acts) != 1 or "waterfront" not in distinct_acts:
-                # e.g. either 0 or 2+ distinct activities, or no 'waterfront' activity
                 violations.append({
                     "group": grp,
                     "time_slot": ts,
                     "msg": f"Expected exactly 1 activity='waterfront', found {list(distinct_acts)}"
                 })
+        
+        # CASE 2: Check for golf+tennis slots (should be exactly two activities: 'golf' and 'tennis')
+        elif distinct_acts == {"golf", "tennis"}:
+            # This is a valid golf+tennis slot - no violation
+            continue
+        
+        # CASE 3: Regular slots should have exactly 4 activities
         else:
-            # 2) Check if this is a "golf+tennis" slot
-            if distinct_acts == {"golf", "tennis"}:
-                # This is a valid "golf+tennis" slot
-                continue
-            else:
-                # 3) This is a normal slot --> want 4 distinct activities
-                act_count = len(distinct_acts)
-                if act_count < 4:
-                    violations.append({
-                        "group": grp,
-                        "time_slot": ts,
-                        "msg": f"Expected 4 activities, found {act_count}: {list(distinct_acts)}"
-                    })
+            act_count = len(distinct_acts)
+            if act_count != 4:
+                violations.append({
+                    "group": grp,
+                    "time_slot": ts,
+                    "msg": f"Expected 4 activities, found {act_count}: {list(distinct_acts)}"
+                })
 
     return violations
 
@@ -115,11 +152,22 @@ def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group
 
 def test_location_activity_match(schedule_df, loc_options_df):
     """
-    Test that each activity is assigned to a valid location from locOptions
+    Tests that each activity is assigned to a valid location according to location options.
+    
+    Activities can only be conducted at specific locations that have the appropriate 
+    facilities. This test verifies that each activity in the schedule is assigned to a 
+    location that is valid for that activity type according to the location options data.
+    
+    Validates Constraint 4: Activities only take place in valid locations.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param loc_options_df: DataFrame containing the valid activity-location pairs
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
 
-    # Create a set of valid (activityName, locName) pairs from locOptions
+    # Create a set of valid (activityName, locName) pairs from location options data
+    # This is used for fast lookup to check if an activity-location pair is valid
     valid_pairs = set(
         zip(loc_options_df["activityName"], loc_options_df["locName"])
     )
@@ -129,11 +177,11 @@ def test_location_activity_match(schedule_df, loc_options_df):
         activity_name = row["activity"]
         location_name = row["location"]
 
-        # skip if location is "NA"
+        # Skip special activities with placeholder location "NA"
         if location_name == "NA":
             continue
 
-        # Check if the (activityName, locName) pair is valid
+        # Check if the activity-location pair is valid
         if (activity_name, location_name) not in valid_pairs:
             violations.append({
                 "activity": activity_name,
@@ -141,101 +189,133 @@ def test_location_activity_match(schedule_df, loc_options_df):
                 "time_slot": row["time_slot"],
                 "group": row["group"]
             })
+            
     return violations
 
 def test_staff_availability(schedule_df, staff_off_time_slots, staff_df):
     """
-    Test to ensure no staff assigned to activities during unavailable time slots
-    :param schedule_df: List of scheduled activities, each containing:
-                     {"activity": ..., "staff": ..., "location": ..., "time_slot": ..., "group": ...}
-    :param staff_off_time_slots: Dictionary mapping staffID to a list of unavailable time slots
-    :param staff_df: DataFrame containing staff information (staffID, staffName)
+    Tests that no staff members are assigned to activities during their time off.
+    
+    Staff members have designated times when they are unavailable (time off, trips,
+    other commitments). This test verifies that no staff member is scheduled for
+    any activity during their designated unavailable time slots.
+    
+    Validates Constraint 7: Staff availability.
+    Validates Constraint 23: Trip assignment enforcement.
+    Validates Constraint 24: Trip exclusivity.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param staff_off_time_slots: Dictionary mapping staff IDs to lists of unavailable time slots
+    :param staff_df: DataFrame containing staff information (including IDs and names)
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
+    
     for _, row in schedule_df.iterrows():
         staff_name = row["staff"]
         time_slot = row["time_slot"]
 
-        # staff_id is a Series of all staffIDs matching 'staff_name'
+        # Find the staff ID corresponding to this staff name
         sid_series = staff_df.loc[staff_df["staffName"] == staff_name, "staffID"]
 
-        # If no staff matched or staff_name is invalid, skip
+        # Skip if staff name doesn't exist in the database
         if sid_series.empty:
             continue
 
-        # Extract the first (or only) match as an integer
+        # Get the staff ID from the series
         staff_id = sid_series.iloc[0]
 
-        # Now staff_id is a single integer, so you can do:
-        if staff_id in staff_off_time_slots:
-            if time_slot in staff_off_time_slots[staff_id]:
-                violations.append({
-                    "staff": staff_name,
-                    "time_slot": time_slot
-                })
+        # Check if this staff member is assigned during their time off
+        if staff_id in staff_off_time_slots and time_slot in staff_off_time_slots[staff_id]:
+            violations.append({
+                "staff": staff_name,
+                "time_slot": time_slot,
+                "activity": row["activity"],
+                "group": row["group"]
+            })
 
     return violations
 
 def test_mandatory_leads(schedule_df, leads_mapping, staff_df, activity_df):
     """
-    Test to ensure each (time_slot, group, activity) combination 
-    has at least one staff who can lead that activity.
+    Tests that each activity has at least one qualified leader assigned.
+    
+    For safety and quality reasons, each scheduled activity must have at least
+    one staff member who is qualified to lead that activity type. This test verifies
+    that every activity in the schedule has at least one assigned staff member who
+    is designated as a qualified leader for that activity.
+    
+    Validates Constraint 10: Leadership requirement for activities.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param leads_mapping: Dictionary mapping staff IDs to lists of activities they can lead
+    :param staff_df: DataFrame containing staff information
+    :param activity_df: DataFrame containing activity information
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
 
-    # Create a mapping of activityName -> activityID
+    # Create a mapping of activity names to their IDs for lookup
     activity_name_to_id = dict(zip(activity_df["activityName"], activity_df["activityID"]))
-    staff_name_to_id    = dict(zip(staff_df["staffName"], staff_df["staffID"]))
-
-    # leads_mapping is staffID -> list_of_activityIDs they can lead
-    # Convert to a set for faster "in" checks:
+    
+    # Convert the leads mapping to use sets for faster lookups
     staff_lead_lookup = {
         sid: set(activities) for sid, activities in leads_mapping.items()
     }
 
-    # Group by these three columns
+    # Group the schedule by time slot, group, and activity
     grouped = schedule_df.groupby(["time_slot", "group", "activity"], observed=False)
 
     for (ts, grp, act), sub_df in grouped:
-        # skip for inspection (location = "NA")
+        # Skip special activities like inspection (indicated by group="NA")
         if grp == "NA":
             continue
 
-        # sub_df has all rows for staff assigned to (ts, grp, act)
-        # Check if at least one staff is a valid lead
-
+        # Get the activity ID from the activity name
         activity_id = activity_name_to_id[act]
 
-        # Collect the staffIDs from sub_df
+        # Collect the staff IDs assigned to this activity
         staff_ids = []
         for staff_name in sub_df["staff"].unique():
-            # get staff_id from staff_name
+            # Find the staff ID for this staff name
             sid_array = staff_df.loc[staff_df["staffName"] == staff_name, "staffID"]
             if not sid_array.empty:
                 staff_ids.append(sid_array.values[0])
 
-        # Now see if any of these staff_ids can lead activity_id
+        # Check if any of the assigned staff can lead this activity
         can_lead = False
         for sid in staff_ids:
-            # If activity_id is in staff_lead_lookup[sid], this staff can lead
             if activity_id in staff_lead_lookup.get(sid, set()):
                 can_lead = True
                 break
 
-        # If no staff can lead, that is a violation
+        # If no qualified leader is assigned, record a violation
         if not can_lead:
             violations.append({
                 "time_slot": ts,
                 "group": grp,
                 "activity": act,
-                "message": "No qualified lead assigned."
+                "message": "No qualified leader assigned to this activity"
             })
 
     return violations
 
 def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, staff_df, activity_df):
     """
-    Test to ensure each scheduled activity only has leads and assists staff assigned
+    Tests that staff are only assigned to activities they are qualified to lead or assist with.
+    
+    Staff members should only be assigned to activities for which they have the appropriate
+    qualifications, either as a leader or assistant. This test verifies that no staff member
+    is assigned to an activity for which they are neither qualified to lead nor assist.
+    
+    Validates Constraint 9: Skill qualification for activities.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param leads_mapping: Dictionary mapping staff IDs to activities they can lead
+    :param assists_mapping: Dictionary mapping staff IDs to activities they can assist with
+    :param staff_df: DataFrame containing staff information
+    :param activity_df: DataFrame containing activity information
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
 
@@ -307,8 +387,20 @@ def test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, sta
 
 def test_inspection_daily(schedule_df, inspection_slots):
     """
-    Test to ensure that inspection is assigned to exactly counselor in the 1st period every day
-    and not assigned outside the 1st period.
+    Tests that cabin inspection is correctly scheduled each day.
+    
+    Cabin inspection has specific scheduling requirements:
+    1. Exactly one staff member must be assigned to inspection during period 1 of each day
+    2. No inspection should be scheduled during other periods
+    
+    This test verifies that these inspection scheduling rules are followed correctly.
+    
+    Validates Constraint 15: Daily cabin inspection requirement.
+    Validates Constraint 16: Inspection and activity exclusivity.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param inspection_slots: List of time slots when inspection can be scheduled
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -364,13 +456,26 @@ def test_inspection_daily(schedule_df, inspection_slots):
 
 def test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days):
     """
-    Test to ensure that Driving Range is scheduled correctly:
-    1. Exactly once per week per group.
-    2. Only in Periods 1 and 2.
-    3. Only on Monday to Thursday.
-    4. Same staff assigned to both periods.
-    5. Number of staff within min and max limits.
-    6. No overlaps or multiple assignments.
+    Tests that driving range activities follow the required scheduling constraints.
+    
+    Driving range has specific scheduling requirements:
+    1. Each group must have driving range exactly once per week
+    2. Driving range must occupy both periods 1 and 2 of the same day
+    3. Driving range can only be scheduled on allowed days (Monday-Thursday)
+    4. The same staff must be assigned to both driving range periods
+    5. At least one qualified staff must be assigned to driving range
+    
+    Validates Constraint 17: Driving range frequency requirement.
+    Validates Constraint 18: Driving range scheduling restrictions.
+    Validates Constraint 19: Driving range period continuity.
+    Validates Constraint 20: Driving range staffing requirements.
+    Validates Constraint 21: Driving range staff continuity.
+    Validates Constraint 22: Staff availability for driving range.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param group_ids: List of group IDs
+    :param allowed_dr_days: List of days when driving range is allowed to be scheduled
+    :return: List of violations, each as a dictionary with details
     """
     violations = []
     driving_range_activity = "driving range"
@@ -437,9 +542,239 @@ def test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days):
     return violations
 
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days):
+def test_trip_staff_assignment(schedule_df, staff_trips, staff_df):
     """
-    Run all test functions on the generated schedule.
+    Tests that all staff members assigned to trips are correctly included in the schedule.
+    
+    When staff are assigned to trips, they should appear in the schedule with the correct
+    trip assignment. This test verifies that all staff who are scheduled for trips are 
+    properly included in the schedule output.
+    
+    Validates Constraint 23: Trip assignment enforcement.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param staff_trips: Dictionary mapping staff IDs to their trip assignments
+    :param staff_df: DataFrame containing staff information
+    :return: List of violations, each as a dictionary with details
+    """
+    violations = []
+    
+    # Create a copy of the schedule to avoid modifying the original
+    schedule_copy = schedule_df.copy()
+    
+    # Normalize staff column to list format
+    schedule_copy['staff'] = schedule_copy['staff'].apply(
+        lambda x: [x] if not isinstance(x, list) else x
+    )
+    
+    # First, build a set of expected trip assignments
+    expected_trip_assignments = set()
+    for staff_id, trips in staff_trips.items():
+        staff_name = staff_df.loc[staff_df["staffID"] == staff_id, "staffName"].values[0]
+        for time_slot, trip_name in trips:
+            expected_trip_assignments.add((staff_name, time_slot, trip_name))
+    
+    # Now extract actual trip assignments from the schedule
+    actual_trip_assignments = set()
+    trip_schedule = schedule_copy[schedule_copy["group"] == "NA"]  # Trips use "NA" for group
+    trip_schedule = trip_schedule[trip_schedule["location"] == "NA"]  # Trips use "NA" for location
+    trip_schedule = trip_schedule[trip_schedule["activity"] != "inspection"]  # Exclude inspection duty
+    
+    for _, row in trip_schedule.iterrows():
+        # Staff may be a single name or a list
+        staff_list = row["staff"]
+        time_slot = row["time_slot"]
+        trip_name = row["activity"]  # Trip name is stored in the activity field
+        
+        # Add each staff member to the set of actual assignments
+        for staff_name in staff_list:
+            actual_trip_assignments.add((staff_name, time_slot, trip_name))
+    
+    # Check for missing trip assignments
+    missing_assignments = expected_trip_assignments - actual_trip_assignments
+    for staff_name, time_slot, trip_name in missing_assignments:
+        violations.append({
+            "staff": staff_name,
+            "time_slot": time_slot,
+            "trip_name": trip_name,
+            "message": "Staff member assigned to trip is missing from schedule"
+        })
+    
+    return violations
+
+def test_trip_time_slots(schedule_df, trips_df):
+    """
+    Tests that all trips are scheduled in the correct time slots.
+    
+    Trips must be scheduled on the exact days and periods specified in the trips data.
+    This test verifies that all trips in the schedule appear in their correct designated
+    time slots.
+    
+    Validates Constraint 23: Trip assignment enforcement.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param trips_df: DataFrame containing trip information
+    :return: List of violations, each as a dictionary with details
+    """
+    violations = []
+    
+    if trips_df.empty:
+        return violations  # No trips to check
+    
+    # Extract trip schedule entries
+    trip_schedule = schedule_df[schedule_df["group"] == "NA"]  # Trips use "NA" for group
+    trip_schedule = trip_schedule[trip_schedule["location"] == "NA"]  # Trips use "NA" for location
+    trip_schedule = trip_schedule[trip_schedule["activity"] != "inspection"]  # Exclude inspection duty
+    
+    if trip_schedule.empty:
+        return violations  # No trips in schedule
+    
+    # First, check if all trips in the trip data appear in the schedule
+    scheduled_trip_names = set(trip_schedule["activity"].unique())
+    expected_trip_names = set(trips_df["trip_name"].unique())
+    
+    # Find trips that are in the data but not in the schedule
+    missing_trips = expected_trip_names - scheduled_trip_names
+    for trip_name in missing_trips:
+        violations.append({
+            "trip_name": trip_name,
+            "message": "Trip exists in trip data but is completely missing from schedule"
+        })
+    
+    # Check that trips are scheduled in all required time slots
+    for trip_name in scheduled_trip_names & expected_trip_names:  # Intersection - only check trips that appear in both
+        # Get the trip schedule for this trip
+        trip_group = trip_schedule[trip_schedule["activity"] == trip_name]
+        
+        # Find this trip in the trips_df to get expected time slots
+        trip_entries = trips_df[trips_df["trip_name"] == trip_name]
+        
+        # Group trip entries by date to handle multi-day trips
+        for date_str, date_entries in trip_entries.groupby("date"):
+            # Convert date string to day of week
+            import datetime
+            try:
+                date_dt = datetime.datetime.strptime(date_str, "%m/%d/%Y")
+                day_of_week = date_dt.strftime("%A")
+            except ValueError:
+                violations.append({
+                    "trip_name": trip_name,
+                    "date": date_str,
+                    "message": "Invalid date format in trip data"
+                })
+                continue
+            
+            # Get start and end periods for this trip on this day
+            min_period = date_entries["start_period"].min()
+            max_period = date_entries["end_period"].max()
+            
+            # Get all time slots where this trip appears in the schedule
+            scheduled_slots = set(trip_group["time_slot"].tolist())
+            
+            # Check if all expected periods for this day are covered
+            for period in range(min_period, max_period + 1):
+                expected_slot = (day_of_week, period)
+                if expected_slot not in scheduled_slots:
+                    violations.append({
+                        "trip_name": trip_name,
+                        "date": date_str,
+                        "expected_slot": expected_slot,
+                        "message": f"Trip missing from required time slot ({day_of_week}, period {period})"
+                    })
+        
+    return violations
+
+def test_trip_staff_consistency(schedule_df):
+    """
+    Tests that the same staff are assigned for the full duration of each trip.
+    
+    Staff assignments for a given trip should be consistent across all time slots.
+    This test verifies that the same staff members are assigned to a trip throughout
+    its entire duration, with no different staff for different periods.
+    
+    Validates Constraint 23: Trip assignment enforcement.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :return: List of violations, each as a dictionary with details
+    """
+    violations = []
+    
+    # Create a copy of the schedule to avoid modifying the original
+    trip_schedule = schedule_df.copy()
+    
+    # Make sure staff column is normalized to lists for consistent comparison
+    # The staff column might be a list in some places and a single value in others
+    trip_schedule['staff'] = trip_schedule['staff'].apply(
+        lambda x: [x] if not isinstance(x, list) else x
+    )
+    
+    # Extract trip schedule entries
+    trip_schedule = trip_schedule[trip_schedule["group"] == "NA"]  # Trips use "NA" for group
+    trip_schedule = trip_schedule[trip_schedule["location"] == "NA"]  # Trips use "NA" for location
+    trip_schedule = trip_schedule[trip_schedule["activity"] != "inspection"]  # Exclude inspection duty
+    
+    if trip_schedule.empty:
+        return violations  # No trips to check
+    
+    # Group trips by name to check staff consistency
+    for trip_name, trip_group in trip_schedule.groupby("activity"):
+        # Collect all staff sets per time slot
+        staff_by_slot = {}
+        
+        for _, row in trip_group.iterrows():
+            slot = row["time_slot"]
+            staff_list = sorted(row["staff"])  # Sort for consistent comparison
+            
+            if slot not in staff_by_slot:
+                staff_by_slot[slot] = set(tuple(staff_list))
+            else:
+                staff_by_slot[slot].add(tuple(staff_list))
+        
+        # Skip trips with only one time slot
+        if len(staff_by_slot) <= 1:
+            continue
+            
+        # Get the first staff set as reference
+        slots = sorted(list(staff_by_slot.keys()))  # Sort slots for consistent reference
+        reference_slot = slots[0]
+        reference_staff = staff_by_slot[reference_slot]
+        
+        # Check all other time slots against the reference
+        for slot in slots[1:]:
+            current_staff = staff_by_slot[slot]
+            if current_staff != reference_staff:
+                violations.append({
+                    "trip_name": trip_name,
+                    "reference_slot": reference_slot,
+                    "reference_staff": [list(s) for s in reference_staff],
+                    "different_slot": slot,
+                    "different_staff": [list(s) for s in current_staff],
+                    "message": "Staff assignments not consistent across trip time slots"
+                })
+                
+    return violations
+
+def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, staff_trips=None, trips_df=None):
+    """
+    Runs all validation tests on the generated schedule and reports the results.
+    
+    This function orchestrates the running of all the individual test functions to verify
+    that the generated schedule meets all the required constraints. It collects and reports
+    any violations found by each test, providing a comprehensive validation of the schedule.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param group_ids: List of group IDs
+    :param location_options_df: DataFrame containing valid activity-location pairs
+    :param staff_off_time_slots: Dictionary mapping staff IDs to unavailable time slots
+    :param staff_df: DataFrame containing staff information
+    :param activity_df: DataFrame containing activity information
+    :param leads_mapping: Dictionary mapping staff IDs to activities they can lead
+    :param assists_mapping: Dictionary mapping staff IDs to activities they can assist with
+    :param waterfront_schedule: Dictionary mapping group IDs to waterfront time slots
+    :param inspection_slots: List of time slots when inspection can be scheduled
+    :param allowed_dr_days: List of days when driving range is allowed
+    :param staff_trips: Dictionary mapping staff IDs to their trip assignments
+    :param trips_df: DataFrame containing trip information
     """
 
     print("Running Tests...")
@@ -453,6 +788,19 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     no_leads_or_assists_violations = test_only_leads_and_assists(schedule_df, leads_mapping, assists_mapping, staff_df, activity_df)
     inspection_violations = test_inspection_daily(schedule_df, inspection_slots)
     driving_range_violations = test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days)
+    
+    # Run trip-related tests if the data is provided
+    trip_assignment_violations = []
+    trip_time_slot_violations = []
+    trip_staff_consistency_violations = []
+    
+    if staff_trips is not None and staff_df is not None:
+        trip_assignment_violations = test_trip_staff_assignment(schedule_df, staff_trips, staff_df)
+    
+    if trips_df is not None:
+        trip_time_slot_violations = test_trip_time_slots(schedule_df, trips_df)
+    
+    trip_staff_consistency_violations = test_trip_staff_consistency(schedule_df)
 
     print("Test Results:")
     if staff_overlap_violations:
@@ -489,15 +837,36 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
         print("Only Leads/Assists Violations:", no_leads_or_assists_violations)
     else:
         print("Only Leads/Assists: PASSED")
+        
     if group_wf_violations:
         print("Group Activity Count per Period Violations:", group_wf_violations)
     else:
         print("Group Activity Count per Period: PASSED")
+        
     if inspection_violations:
         print("Inspection Violations:", inspection_violations)
     else:
         print("Inspection Check: PASSED")
+        
     if driving_range_violations:
         print("Driving Range Violations:", driving_range_violations)
     else:
         print("Driving Range Check: PASSED")
+        
+    # Report trip test results if they were run
+    if staff_trips is not None:
+        if trip_assignment_violations:
+            print("Trip Staff Assignment Violations:", trip_assignment_violations)
+        else:
+            print("Trip Staff Assignment: PASSED")
+    
+    if trips_df is not None:
+        if trip_time_slot_violations:
+            print("Trip Time Slot Violations:", trip_time_slot_violations)
+        else:
+            print("Trip Time Slots: PASSED")
+    
+    if trip_staff_consistency_violations:
+        print("Trip Staff Consistency Violations:", trip_staff_consistency_violations)
+    else:
+        print("Trip Staff Consistency: PASSED")

@@ -7,10 +7,11 @@ import pandas as pd
 
 def map_dates_to_time_slots(dates):
     """
-    Map dates to corresponding fay of the week in the time slot format
-    :param dates: List of dates in MM/DD/YY format
-    :param base_date: first day of the week in MM/DD/YY format (e.g. Monday)
-    :return: Dictionary mapping dates to time slots
+    Converts calendar dates to day-of-week time slots used in the schedule model.
+    Each date is transformed into multiple time slots (one for each period in the day).
+    
+    :param dates: List of dates in MM/DD/YYYY format
+    :return: List of time slots in (day_name, period) format
     """
     time_slots_map = []
 
@@ -34,13 +35,20 @@ class Scheduler:
     def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
                  staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips):
         """
-        Initialize the Scheduler.
-        :param staff_df: List of staff names and IDs
-        :param activity_df: List of activity IDs and their metadata
-        :param location_df: List of location names and IDs
-        :param group_df: List of group IDs
-        :param time_slots: List of available time slots
+        Initialize the Scheduler with all necessary camp data.
+        
+        :param staff_df: DataFrame containing staff information (names and IDs)
+        :param activity_df: DataFrame containing activities and their requirements
+        :param location_df: DataFrame containing location information
+        :param location_options_df: DataFrame mapping activities to their possible locations
+        :param group_df: DataFrame containing camper group information
+        :param time_slots: List of all available time slots in format (day, period)
         :param staff_off_time_slots: Dictionary mapping staff IDs to unavailable time slots
+        :param leads_mapping: Dictionary mapping staff IDs to activities they can lead
+        :param assists_mapping: Dictionary mapping staff IDs to activities they can assist with
+        :param waterfront_schedule: Dictionary mapping group IDs to their waterfront time slots
+        :param allowed_dr_days: List of days when driving range is permitted
+        :param staff_trips: Dictionary mapping staff IDs to their trip assignments
         """
         self.staff_df = staff_df
         self.activity_df = activity_df
@@ -54,11 +62,20 @@ class Scheduler:
         self.waterfront_schedule = waterfront_schedule
 
     def solve(self):
-        # Extract IDs
+        """
+        Builds and solves the constraint satisfaction problem for camp scheduling.
+        Returns a complete schedule if a feasible solution is found.
+        
+        :return: List of dictionaries containing schedule entries
+        :raises: ValueError if no feasible solution is found
+        """
+        # Extract all entity IDs from DataFrames
         staff_ids = self.staff_df["staffID"].tolist()
         activity_ids = self.activity_df["activityID"].tolist()
         location_ids = self.location_df["locID"].tolist()
         group_ids = self.group_df["groupID"].tolist()
+        
+        # Get IDs for special activities that have specific constraints
         waterfront_id = self.activity_df.loc[
             self.activity_df["activityName"] == "waterfront",
             "activityID"
@@ -66,7 +83,7 @@ class Scheduler:
         golf_id = self.activity_df.loc[self.activity_df["activityName"] == "golf", "activityID"].values[0]
         tennis_id = self.activity_df.loc[self.activity_df["activityName"] == "tennis", "activityID"].values[0]
 
-        # Create the model
+        # Initialize the constraint programming model
         model = cp_model.CpModel()
 
         # DECISION VARIABLES:
@@ -102,17 +119,20 @@ class Scheduler:
         # trip_assign[i,k, trip_name] = 1 if staff i is assigned to trip_name at time k
         trip_assign = {}
 
+        # Create decision variables for staff assignments to activities
         for g in group_ids:
             for i in staff_ids:
                 for j in activity_ids:
                     for k in self.time_slots:
                         staff_assign[i,j,k, g] = model.NewBoolVar(f'x[{i},{j},{k[0]}, {k[1]},{g}]')
 
+            # Create decision variables for location assignments to activities
             for l in location_ids:
                 for j in activity_ids:
                     for k in self.time_slots:
                         loc_assign[l,j,k, g] = model.NewBoolVar(f'y[{l},{j},{k[0]}, {k[1]},{g}]')
 
+        # Create staff count variables and activity selection variables
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
@@ -123,20 +143,22 @@ class Scheduler:
                         f't[{j},{k[0]}, {k[1]},{g}]'
                     )
 
-                    # Sum of x[i,j,k,g] must match t[j,k,g]
+                    # Constraint: Staff count equals sum of all staff assignments
                     model.Add(
                         staff_count[j,k,g] == sum(staff_assign[i,j,k,g] for i in staff_ids)
                     )
 
-                    # Create a BoolVar for "activity j chosen in (k,g)"
+                    # Boolean variable indicating if activity j is chosen for time slot k and group g
                     activity_chosen[j,k,g] = model.NewBoolVar(
                         f'z[{j},{k[0]}, {k[1]},{g}]'
                     )
 
+        # Create variables for golf and tennis scheduling (special case where they must be scheduled together)
         for g in group_ids:
             for k in self.time_slots:
                 golf_tennis_slot[k,g] = model.NewBoolVar(f"both_golf_tennis_{k}_{g}")
 
+        # Create variables for cabin inspection assignments (only in period 1)
         for i in staff_ids:
             for k in time_slots:
                 if k[1] == 1: # period 1
@@ -144,12 +166,14 @@ class Scheduler:
                 else:
                     pass # no inspection in period 2 or 3
 
+        # Create variables for driving range scheduling (special activity spanning two periods)
         for g in group_ids:
             for day in allowed_dr_days:
                 driving_range_day[g, day] = model.NewBoolVar(f"driving_range_g{g}_{day}")
                 for i in staff_ids:
                     driving_range_staff[g, day, i] = model.NewBoolVar(f"driving_range_g{g}_{day}_{i}")
 
+        # Create variables for trip assignments (staff going on trips outside of camp)
         trip_name_list = set() # gather unique names from staff trips
         for i in staff_ids:
             if i not in staff_trips:
@@ -167,84 +191,102 @@ class Scheduler:
         # CONSTRAINTS:
         ##############
 
-        # Activity exclusivity across groups in the same time slot
+        # Constraint 1: Activity exclusivity across groups in the same time slot
+        # Each activity can be assigned to at most one group in a given time slot
         for j in activity_ids:
             for k in self.time_slots:
                 model.Add(
                     sum(activity_chosen[j,k,g] for g in group_ids) <= 1
                 )
 
-        # Staff non-overlap across groups in the same time slot
+        # Constraint 2: Staff non-overlap across activities and groups
+        # Each staff member can be assigned to at most one activity across all groups in a time slot
         for i in staff_ids:
             for k in self.time_slots:
                 model.Add(
                     sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) <= 1
                 )
 
-        # Location non-overlap across groups in the same time slot
+        # Constraint 3: Location non-overlap across activities and groups
+        # Each location can be used for at most one activity across all groups in a time slot
         for l in location_ids:
             for k in self.time_slots:
                 model.Add(
                     sum(loc_assign[l,j,k,g] for j in activity_ids for g in group_ids) <= 1
                 )
 
-        # Activities only take place in a valid location
-        # Create mapping of activityID to valid locationID
+        # Constraint 4: Activities only take place in valid locations
+        # Create mapping of activityID to valid locationIDs from the location options DataFrame
         valid_locations = (
             self.location_options_df.groupby("activityID")["locID"]
             .apply(list)
             .to_dict()
         )
+        
+        # Ensure activities are only assigned to valid locations
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
                     valid_loc_vars = [loc_assign[l,j,k,g] for l in valid_locations.get(j, [])]
+                    # If activity is chosen, exactly one valid location must be assigned
+                    # If activity is not chosen, no location should be assigned
                     model.Add(sum(valid_loc_vars) == activity_chosen[j,k,g])
 
-        # Group-specific activity assignment (4 activities per time slot)
+        # Constraint 5: Group-specific activity assignment
+        # Each group needs the right number of activities per time slot
         for g in group_ids:
             for k in self.time_slots:
+                # Skip waterfront slots which have special handling
                 if k in waterfront_schedule[g]:
                     continue # waterfront already handled
 
-                # If k is NOT a waterfront slot, sum(...)=4 only if both_gt=0, if both_gt=1, sum(...)=2
+                # For regular time slots:
+                # - If NOT a golf+tennis slot: each group gets exactly 4 activities
+                # - If IS a golf+tennis slot: each group gets exactly 2 activities (golf and tennis)
+                
+                # Regular case: 4 activities when not golf+tennis slot
                 model.Add(
                     sum(activity_chosen[j,k,g] for j in activity_ids) == 4
                 ).OnlyEnforceIf(golf_tennis_slot[k, g].Not())
 
+                # Special case: 2 activities when golf+tennis slot
                 model.Add(
                     sum(activity_chosen[j,k,g] for j in activity_ids) == 2
                 ).OnlyEnforceIf(golf_tennis_slot[k, g])
 
-        # Link staff, location, and activity assignments
+        # Constraint 6: Link staff, location, and activity assignments
+        # Ensure proper relationships between activity selection, location assignment, and staffing
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
-                    # If activity j is chosen (z=1), pick exactly one location
+                    # If activity j is chosen for (k,g), exactly one location must be assigned
                     model.Add(
                         sum(loc_assign[l,j,k,g] for l in location_ids) == 1
                     ).OnlyEnforceIf(activity_chosen[j,k,g])
 
-                    # If not chosen, no location is assigned
+                    # If activity j is not chosen for (k,g), no location should be assigned
                     model.Add(
                         sum(loc_assign[l,j,k,g] for l in location_ids) == 0
                     ).OnlyEnforceIf(activity_chosen[j,k,g].Not())
 
-                    # For each location, if y=1 --> T>0, if z=0 --> y=0
+                    # Additional constraints for location assignment:
+                    # - If a location is assigned to activity j, there must be staff assigned (count > 0)
+                    # - If activity j is not chosen, no location can be assigned to it
                     for l in location_ids:
                         model.Add(staff_count[j,k,g] > 0).OnlyEnforceIf(loc_assign[l,j,k,g])
                         model.Add(loc_assign[l,j,k,g] == 0).OnlyEnforceIf(activity_chosen[j,k,g].Not())
 
-        # Staff availability
-        # For activities
+        # Constraint 7: Staff availability
+        # Staff cannot be assigned to activities during their time off
         for i in staff_ids:
             unavailable_time_slots = self.staff_off_time_slots.get(i, [])
             for k in unavailable_time_slots:
+                # Staff cannot be assigned to any activity during their time off
                 for j in activity_ids:
                     for g in group_ids:
                         model.Add(staff_assign[i, j, k, g] == 0)
 
-        # For inspection
+        # Staff cannot be assigned to inspection during their time off
         for i in staff_ids:
             unavailable_time_slots = self.staff_off_time_slots.get(i, [])
             for k in unavailable_time_slots:
@@ -252,155 +294,177 @@ class Scheduler:
                     model.Add(inspection_slot[i,k] == 0)
 
 
-        # Ensure min required staff assigned to each activity
+        # Constraint 8: Minimum staffing requirements for activities
+        # Each activity must have its required minimum number of staff when chosen
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
-                    # Min staff if z=1 (activity j is chosen)
+                    # Get the minimum staff requirement for this activity from the activity DataFrame
                     required_staff = self.activity_df.loc[
                         self.activity_df["activityID"] == j,
                         "numStaffReq"
                     ].values[0]
 
+                    # If activity is chosen, ensure minimum staff requirement is met
                     model.Add(staff_count[j, k, g] >= required_staff).OnlyEnforceIf(activity_chosen[j, k, g])
+                    
+                    # If activity is not chosen, ensure no staff are assigned
                     model.Add(staff_count[j, k, g] == 0).OnlyEnforceIf(activity_chosen[j, k, g].Not())
 
-        # Staff can only be assigned if they can lead or assist
+        # Constraint 9: Skill qualification for activities
+        # Staff can only be assigned to activities they can lead or assist with
         for g in group_ids:
             for i in staff_ids:
-                # Combine the sets of leads + assists
+                # Combine the sets of activities staff can lead or assist with
                 can_participate_set = set(leads_mapping.get(i,[])) | set(assists_mapping.get(i,[]))
                 for j in activity_ids:
                     for k in self.time_slots:
+                        # If staff cannot lead or assist this activity, they cannot be assigned
                         if j not in can_participate_set:
                             model.Add(staff_assign[i, j, k, g] == 0)
 
-        # At least one staff assigned who can lead each activity
+        # Constraint 10: Leadership requirement for activities
+        # Each activity must have at least one staff who can lead it
         for g in group_ids:
             for j in activity_ids:
                 for k in self.time_slots:
+                    # Sum up all staff who can lead this activity
                     leads_assigned = sum(
                         staff_assign[i, j, k, g] for i in staff_ids if j in leads_mapping.get(i, [])
                     )
-                    # if z=1 --> leads_assigned >=1
+                    # If activity is chosen, ensure at least one staff can lead it
                     model.Add(leads_assigned >= 1).OnlyEnforceIf(activity_chosen[j, k, g])
 
-        # Waterfront scheduled at same times each week per group, only activity in that time slot
+        # Constraint 11: Waterfront scheduling
+        # Waterfront must be scheduled at fixed times for each group and as the only activity
         for g, timeslots in waterfront_schedule.items():
             for k in timeslots:
-                # 1) Must schedule waterfront
+                # 1) Must schedule waterfront in these designated slots
                 model.Add(activity_chosen[waterfront_id, k, g] == 1)
-                # 2) No other activities in that time slot
+                
+                # 2) No other activities can be scheduled in the waterfront time slot
                 model.Add(sum(activity_chosen[j,k,g] for j in activity_ids) == 1)
 
-        # Golf and Tennis only scheduled at the same time slot
-        # If we choose "both golf & tennis" in slot k,g => sum of z[...] = 2
-        # specifically z[golf_id,k,g] == 1 AND z[tennis_id,k,g] == 1, and no other activities.
+        # Constraint 12: Golf and Tennis pairing requirement
+        # Golf and Tennis must be scheduled together in the same time slot
+        # When they are scheduled together, they are the only two activities in that slot
 
         for g in group_ids:
             for k in time_slots:
-                # If both_gt=1 => golf & tennis are chosen => sum(z[j,k,g])=2
+                # When golf_tennis_slot is true, exactly 2 activities are chosen (golf and tennis)
                 model.Add(
                     sum(activity_chosen[j, k, g] for j in activity_ids) == 2
                 ).OnlyEnforceIf(golf_tennis_slot[k, g])
 
-                # If both_gt=0 => we can't have BOTH golf & tennis
-                # That doesn't necessarily forbid golf alone or tennis alone,
-                # so we strictly link them:
-
-                # We also want: both_gt=1 <=> z[golf_id,k,g] & z[tennis_id,k,g]
+                # Ensure that when golf_tennis_slot is true, those two activities must be golf and tennis
                 model.Add(activity_chosen[golf_id, k, g] + activity_chosen[tennis_id, k, g] == 2).OnlyEnforceIf(golf_tennis_slot[k, g])
+                
+                # When golf_tennis_slot is false, golf and tennis cannot both be scheduled
+                # (at most one can be scheduled, or neither)
                 model.Add(activity_chosen[golf_id, k, g] + activity_chosen[tennis_id, k, g] <= 1).OnlyEnforceIf(golf_tennis_slot[k, g].Not())
 
-        # Golf and Tennis at least twice a week
-        # For each group, sum of both_gt >= 2
+        # Constraint 13: Golf and Tennis frequency requirement
+        # Each group must have the golf and tennis pairing at least twice per week
         for g in group_ids:
             model.Add(
                 sum(golf_tennis_slot[k, g] for k in time_slots) >= 2
             )
 
-        # Golf and Tennis not scheduled twice for a group on the same day
-        day_map = {}  # day_map[k] = "Monday"/"Tuesday"/...
+        # Constraint 14: Daily golf and tennis limit
+        # Golf and Tennis pairing can appear at most once per day for each group
+        day_map = {}  # Map time slots to their day of the week
         for k in time_slots:
-            day_map[k] = k[0]
+            day_map[k] = k[0]  # k[0] contains the day name
+            
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         for g in group_ids:
             for d in days:
-                # gather all time slots for that day
+                # Get all time slots for the current day
                 day_slots = [k for k in time_slots if day_map[k] == d]
 
-                # at most one slot in that day for golf + tennis
+                # Limit golf + tennis pairing to at most once per day per group
                 model.Add(
                     sum(golf_tennis_slot[k, g] for k in day_slots) <= 1
                 )
 
-        # One staff assigned to inspection in each days period 1
+        # Constraint 15: Daily cabin inspection requirement
+        # Exactly one staff member must be assigned to cabin inspection each day during period 1
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         for day in days:
-            # gather the time slot (day,1)
-            day_slot = (day,1)
-            # enforce one staff
+            # Create the period 1 time slot for this day
+            day_slot = (day, 1)
+            
+            # Ensure exactly one staff is assigned to inspection
             model.Add(
                 sum(inspection_slot[i,day_slot] for i in staff_ids) == 1
             )
 
-        # Staff can't do inspection + normal activity at the same time
+        # Constraint 16: Inspection and activity exclusivity
+        # Staff cannot be assigned to both inspection and regular activities in the same time slot
         for i in staff_ids:
             for k in time_slots:
-                if k[1] == 1:
+                if k[1] == 1:  # Only period 1 has inspections
                     model.Add(
                         sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) + inspection_slot[i,k] <= 1
                     )
                 else:
-                    pass # no inspection --> no overlap constraint needed
+                    pass  # No inspection in periods 2 or 3, so no constraint needed
 
-        # Each group has driving range at most once a week
+        # Constraint 17: Driving range frequency requirement
+        # Each group must have driving range exactly once per week on an allowed day
         for g in group_ids:
             model.Add(
                 sum(driving_range_day[g, day] for day in allowed_dr_days) == 1
             )
 
-        # Additional Driving Range Constraints
+        # Constraint 18: Driving range scheduling restrictions
+        # Get the driving range activity ID
         driving_range_id = self.activity_df.loc[
             self.activity_df["activityName"] == "driving range",
             "activityID"
         ].values[0]
 
-        # "Driving Range" cannot be chosen outside Periods 1 and 2 or outside allowed days
+        # Driving Range can only be scheduled during periods 1 and 2 on allowed days
         for g in group_ids:
             for j in activity_ids:
                 if j == driving_range_id:
                     for k in self.time_slots:
                         day, period = k
+                        # If not an allowed day or period, driving range cannot be scheduled
                         if day not in allowed_dr_days or period not in [1, 2]:
                             model.Add(activity_chosen[j, k, g] == 0)
 
+        # Constraint 19: Driving range period continuity
+        # Driving range must be scheduled for both periods 1 and 2 on the same day
         for g in group_ids:
             for day in allowed_dr_days:
-                k1 = (day,1)
-                k2 = (day,2)
-                dr_day_var = driving_range_day[g, day]
+                k1 = (day, 1)  # Period 1 slot
+                k2 = (day, 2)  # Period 2 slot
+                dr_day_var = driving_range_day[g, day]  # Boolean variable for driving range on this day
 
-                # If driving range in scheduled on this day, it must be in both periods 1 and 2
+                # If driving range is scheduled on this day, it must be in both periods 1 and 2
                 model.Add(activity_chosen[driving_range_id, k1, g] == 1).OnlyEnforceIf(dr_day_var)
                 model.Add(activity_chosen[driving_range_id, k2, g] == 1).OnlyEnforceIf(dr_day_var)
 
-                # If driving range is not scheduled on this day, it must be in neither period 1 nor 2
+                # If driving range is not scheduled on this day, it must not be in either period
                 model.Add(activity_chosen[driving_range_id, k1, g] == 0).OnlyEnforceIf(dr_day_var.Not())
                 model.Add(activity_chosen[driving_range_id, k2, g] == 0).OnlyEnforceIf(dr_day_var.Not())
 
-                # At least one staff assigned to driving range
+                # Constraint 20: Driving range staffing requirements
+                # At least one staff must be assigned to driving range when it's scheduled
                 model.Add(
                     sum(driving_range_staff[g, day, i] for i in staff_ids) >= 1
                 ).OnlyEnforceIf(dr_day_var)
 
-                # If no driving range, no staff assigned
+                # If driving range is not scheduled, no staff should be assigned to it
                 model.Add(
                     sum(driving_range_staff[g, day, i] for i in staff_ids) == 0
                 ).OnlyEnforceIf(dr_day_var.Not())
 
-                # Staff assigned to driving range must be assigned to both periods 1 and 2
+                # Constraint 21: Driving range staff continuity
+                # Staff assigned to driving range must work both periods 1 and 2
                 for i in staff_ids:
+                    # Link the driving range staff variables to the actual staff assignments
                     model.Add(
                         staff_assign[i, driving_range_id, k1, g] == driving_range_staff[g, day, i]
                     ).OnlyEnforceIf(dr_day_var)
@@ -408,7 +472,7 @@ class Scheduler:
                         staff_assign[i, driving_range_id, k2, g] == driving_range_staff[g, day, i]
                     ).OnlyEnforceIf(dr_day_var)
 
-                    # If Driving Range is not scheduled on this day, staff_assign variables must be 0
+                    # If driving range is not scheduled, ensure no staff assignments
                     model.Add(
                         staff_assign[i, driving_range_id, k1, g] == 0
                     ).OnlyEnforceIf(dr_day_var.Not())
@@ -416,200 +480,212 @@ class Scheduler:
                         staff_assign[i, driving_range_id, k2, g] == 0
                     ).OnlyEnforceIf(dr_day_var.Not())
 
-                    # Staff must be available
+                    # Constraint 22: Staff availability for driving range
+                    # Staff can only be assigned to driving range if available for both periods
                     unavailable_time_slots = self.staff_off_time_slots.get(i, [])
                     if k1 in unavailable_time_slots or k2 in unavailable_time_slots:
-                        # Staff i cannot be assigned to Driving Range on this day
+                        # If staff is unavailable in either period, they cannot be assigned to driving range
                         model.Add(driving_range_staff[g, day, i] == 0)
 
-        # Force trip assignment if staff is on trip
+        # Constraint 23: Trip assignment enforcement
+        # Staff members must be assigned to trips listed in the trips data
         for i in staff_ids:
             if i not in staff_trips:
                 continue
 
             for (k, trip_name) in staff_trips[i]:
+                # Force assignment of staff to their scheduled trips
                 model.Add(
                     trip_assign[i,k, trip_name] == 1
                 )
 
-        # Disallow other assignment if staff is on trip in that time slot
+        # Constraint 24: Trip exclusivity
+        # Staff on trips cannot be assigned to other activities or inspection
         for i in staff_ids:
             if i not in staff_trips:
                 continue
 
             for (k, trip_name) in staff_trips[i]:
+                # Staff on trips cannot be assigned to any regular activities
                 model.Add(
                     sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) == 0
                 ).OnlyEnforceIf(trip_assign[i,k, trip_name])
 
+                # Staff on trips cannot be assigned to inspection duty
                 if k in inspection_slots:
                     model.Add(
                         inspection_slot[i,k] == 0
                     ).OnlyEnforceIf(trip_assign[i,k, trip_name])
 
         # OBJECTIVE FUNCTION:
-        # Empty objective function (currently no optimization)
+        # Empty objective function (satisfy all constraints without optimization)
         model.Minimize(0)
 
-        # Solve the model
+        # Solve the constraint programming model
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
 
         # EXTRACT RESULTS
+        # Build the schedule if a feasible solution was found
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
             schedule = []
 
-            if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-                for g in group_ids:
-                    for j in activity_ids:
-                        # skip driving range
-                        if j == driving_range_id:
-                            continue
-                        for k in self.time_slots:
-                            # Collect all staff i assigned
-                            assigned_staff_ids = [i for i in staff_ids if solver.Value(staff_assign[i, j, k, g]) == 1]
-
-                            if assigned_staff_ids:
-                                # That means (j,k,g) is actually chosen (z=1) and has staff
-
-                                # Find assigned location exactly once
-                                assigned_location = None
-                                for l in location_ids:
-                                    if solver.Value(loc_assign[l, j, k, g]) == 1:
-                                        assigned_location = l
-                                        break
-
-                                # Convert staff IDs to staff names
-                                assigned_staff_names = []
-                                for i in assigned_staff_ids:
-                                    name = self.staff_df.loc[
-                                        self.staff_df["staffID"] == i, "staffName"
-                                    ].values[0]
-                                    assigned_staff_names.append(name)
-
-                                # Convert IDs to activity/location names
-                                activity_name = self.activity_df.loc[
-                                    self.activity_df["activityID"] == j,
-                                    "activityName"
-                                ].values[0]
-                                location_name = self.location_df.loc[
-                                    self.location_df["locID"] == assigned_location,
-                                    "locName"
-                                ].values[0]
-
-                                schedule.append({
-                                    "activity": activity_name,
-                                    "staff": assigned_staff_names,  # list of all staff
-                                    "location": location_name,
-                                    "time_slot": k,
-                                    "group": g
-                                })
-
-                # Extract driving range assignment
-                for g in group_ids:
-                    for day in allowed_dr_days:
-                        if solver.Value(driving_range_day[g, day]) == 1:
-                            k1 = (day, 1)
-                            k2 = (day, 2)
-
-                            # Find the staff assigned to driving range
-                            assigned_staff_ids = [
-                                i for i in staff_ids
-                                if solver.Value(driving_range_staff[g, day, i]) == 1
-                            ]
-
-                            if assigned_staff_ids:
-                                for i in assigned_staff_ids:
-                                    names = self.staff_df.loc[
-                                        self.staff_df["staffID"] == i,
-                                        "staffName"
-                                    ].values[0]
-
-                                # Append driving range to schedule in both periods
-                                schedule.append({
-                                    "activity": "driving range",
-                                    "staff": [names],
-                                    "location": "driving range",
-                                    "time_slot": k1,
-                                    "group": g
-                                })
-                                schedule.append({
-                                    "activity": "driving range",
-                                    "staff": [names],
-                                    "location": "driving range",
-                                    "time_slot": k2,
-                                    "group": g
-                                })
-
-                # Extract inspection assignment
-                for k in inspection_slots:
-                    assigned_inspection_id = [i for i in staff_ids if solver.Value(inspection_slot[i,k]) == 1]
-                    if assigned_inspection_id:
-                        # Find staff name
-                        name = self.staff_df.loc[
-                            self.staff_df["staffID"] == assigned_inspection_id[0],
-                            "staffName"
-                        ].values[0]
-
-                        schedule.append({
-                            "activity": "inspection",
-                            "staff": [name],
-                            "location": "NA",
-                            "time_slot": k,
-                            "group": "NA"
-                        })
-
-                # EXTRACT TRIP ASSIGNMENTS
-                trip_assignments = {} # key = (trip_name, slot), value = list of staff IDs
-
-                # Collect staff for each trip
-                for i in staff_ids:
-                    if i not in staff_trips:
+            # Process the solution to build a readable schedule
+            for g in group_ids:
+                for j in activity_ids:
+                    # Skip driving range (handled separately)
+                    if j == driving_range_id:
                         continue
-                    trips_for_staff = staff_trips.get(i, [])
-                    for (slot, trip_name) in trips_for_staff:
-                        key = (trip_name, slot)
-                        if key not in trip_assignments:
-                            trip_assignments[key] = []
-                        trip_assignments[key].append(i)
+                    for k in self.time_slots:
+                        # Collect all staff assigned to this activity, time slot, and group
+                        assigned_staff_ids = [i for i in staff_ids if solver.Value(staff_assign[i, j, k, g]) == 1]
 
-                # Collect staff in a dict: trip_rows[{trip_name, slot}] = [staff1, staff2, ...]
-                trip_rows = {}
-                for (trip_name, k), staff_list in trip_assignments.items():
-                    for i in staff_list:
-                        if solver.Value(trip_assign[i,k,trip_name]) == 1:
-                            if (trip_name, k) not in trip_rows:
-                                trip_rows[(trip_name, k)] = []
-                            trip_rows[(trip_name, k)].append(i)
+                        # Only process activities that have staff assigned to them
+                        if assigned_staff_ids:
+                            # Find the assigned location for this activity
+                            assigned_location = None
+                            for l in location_ids:
+                                if solver.Value(loc_assign[l, j, k, g]) == 1:
+                                    assigned_location = l
+                                    break
 
-                # Build single entry per trip
-                for (trip_name, k), staff_ids in trip_rows.items():
-                    staff_names = []
-                    for i in staff_ids:
-                        name = self.staff_df.loc[
-                            self.staff_df["staffID"] == i,
-                            "staffName"
-                        ].values[0]
-                        staff_names.append(name)
+                            # Convert staff IDs to staff names
+                            assigned_staff_names = []
+                            for i in assigned_staff_ids:
+                                name = self.staff_df.loc[
+                                    self.staff_df["staffID"] == i, "staffName"
+                                ].values[0]
+                                assigned_staff_names.append(name)
 
+                            # Convert IDs to activity/location names
+                            activity_name = self.activity_df.loc[
+                                self.activity_df["activityID"] == j,
+                                "activityName"
+                            ].values[0]
+                            location_name = self.location_df.loc[
+                                self.location_df["locID"] == assigned_location,
+                                "locName"
+                            ].values[0]
+
+                            # Add this activity to the schedule
+                            schedule.append({
+                                "activity": activity_name,
+                                "staff": assigned_staff_names,  # list of all staff
+                                "location": location_name,
+                                "time_slot": k,
+                                "group": g
+                            })
+
+            # Extract driving range assignments
+            for g in group_ids:
+                for day in allowed_dr_days:
+                    # Check if driving range is scheduled for this group and day
+                    if solver.Value(driving_range_day[g, day]) == 1:
+                        k1 = (day, 1)  # Period 1
+                        k2 = (day, 2)  # Period 2
+
+                        # Find staff assigned to driving range
+                        assigned_staff_ids = [
+                            i for i in staff_ids
+                            if solver.Value(driving_range_staff[g, day, i]) == 1
+                        ]
+
+                        if assigned_staff_ids:
+                            # Get staff names
+                            for i in assigned_staff_ids:
+                                names = self.staff_df.loc[
+                                    self.staff_df["staffID"] == i,
+                                    "staffName"
+                                ].values[0]
+
+                            # Add driving range to schedule for both periods
+                            schedule.append({
+                                "activity": "driving range",
+                                "staff": [names],
+                                "location": "driving range",
+                                "time_slot": k1,
+                                "group": g
+                            })
+                            schedule.append({
+                                "activity": "driving range",
+                                "staff": [names],
+                                "location": "driving range",
+                                "time_slot": k2,
+                                "group": g
+                            })
+
+            # Extract inspection assignments
+            for k in inspection_slots:
+                assigned_inspection_id = [i for i in staff_ids if solver.Value(inspection_slot[i,k]) == 1]
+                if assigned_inspection_id:
+                    # Get the name of the staff assigned to inspection
+                    name = self.staff_df.loc[
+                        self.staff_df["staffID"] == assigned_inspection_id[0],
+                        "staffName"
+                    ].values[0]
+
+                    # Add inspection to the schedule
                     schedule.append({
-                        "activity": trip_name,
-                        "staff": staff_names,
+                        "activity": "inspection",
+                        "staff": [name],
                         "location": "NA",
                         "time_slot": k,
                         "group": "NA"
                     })
 
-                return schedule
+            # Extract trip assignments
+            trip_assignments = {}  # Maps (trip_name, slot) to list of staff IDs
+
+            # Collect staff for each trip
+            for i in staff_ids:
+                if i not in staff_trips:
+                    continue
+                trips_for_staff = staff_trips.get(i, [])
+                for (slot, trip_name) in trips_for_staff:
+                    key = (trip_name, slot)
+                    if key not in trip_assignments:
+                        trip_assignments[key] = []
+                    trip_assignments[key].append(i)
+
+            # Organize trip staff into a dictionary by trip and time slot
+            trip_rows = {}
+            for (trip_name, k), staff_list in trip_assignments.items():
+                for i in staff_list:
+                    if solver.Value(trip_assign[i,k,trip_name]) == 1:
+                        if (trip_name, k) not in trip_rows:
+                            trip_rows[(trip_name, k)] = []
+                        trip_rows[(trip_name, k)].append(i)
+
+            # Create schedule entries for trips
+            for (trip_name, k), staff_ids in trip_rows.items():
+                # Convert staff IDs to names
+                staff_names = []
+                for i in staff_ids:
+                    name = self.staff_df.loc[
+                        self.staff_df["staffID"] == i,
+                        "staffName"
+                    ].values[0]
+                    staff_names.append(name)
+                
+                # Add trip to the schedule
+                schedule.append({
+                    "activity": trip_name,
+                    "staff": staff_names,
+                    "location": "NA",
+                    "time_slot": k,
+                    "group": "NA"
+                })
+
+            return schedule
         else:
             raise ValueError("No feasible solution found.")
 
-# Usage
+# Main application entry point
 if __name__ == "__main__":
-    # Initialize DataManager
+    # Initialize the data manager with the data directory
     manager = DataManager(data_dir="data")
 
-    # Load and validate data
+    # Load all CSV files and validate the data
     manager.load_all_csvs()
     manager.validate_all()
 
