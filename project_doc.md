@@ -10,8 +10,8 @@ This project uses Google's OR-Tools constraint programming solver to create opti
 - Optimization of defined variables
 ## Tech stack
 - Optimizer: OR-Tools
-- Backend: FastAPI or Flask (TBD)
-- Frontend: Vue.js or React with Tailwind CSS (TBD)
+- Backend: Flask 
+- Frontend: Vue.js with Tailwind CSS
 - Database: SQLite
 - Deployment: Electron Application or Docker (TBD)
 ## Project Roadmap
@@ -60,6 +60,167 @@ Detailed Steps:
 4. Create backup functionality
    1. Add simple database backup feature
    2. Implement restore capability for recovery
+
+### SQLite Database Implementation
+1. Database Schema Design (app/database/schema.py)
+   1. Staff Table
+      - id (INTEGER PRIMARY KEY)
+      - name (TEXT NOT NULL)
+      - role (TEXT) - e.g., 'counselor', 'director', 'specialist'
+      - active (BOOLEAN DEFAULT TRUE)
+      - notes (TEXT)
+   2. Activity Table
+      - id (INTEGER PRIMARY KEY)
+      - name (TEXT NOT NULL)
+      - category (TEXT NOT NULL) - e.g., 'sports', 'arts', 'nature'
+      - min_staff_leads (INTEGER DEFAULT 1)
+      - min_staff_assists (INTEGER DEFAULT 0)
+      - duration_periods (INTEGER DEFAULT 1)
+      - is_waterfront (BOOLEAN DEFAULT FALSE)
+      - notes (TEXT)
+   3. Location Table
+      - id (INTEGER PRIMARY KEY)
+      - name (TEXT NOT NULL)
+      - is_waterfront (BOOLEAN DEFAULT FALSE)
+   4. Group Table
+      - id (INTEGER PRIMARY KEY)
+      - name (TEXT NOT NULL)
+      - size (INTEGER)
+   5. ActivityLocation Table (M2M relationship)
+      - activity_id (INTEGER, FOREIGN KEY)
+      - location_id (INTEGER, FOREIGN KEY)
+      - PRIMARY KEY (activity_id, location_id)
+   6. StaffQualification Table
+      - staff_id (INTEGER, FOREIGN KEY)
+      - activity_id (INTEGER, FOREIGN KEY)
+      - can_lead (BOOLEAN DEFAULT FALSE)
+      - can_assist (BOOLEAN DEFAULT FALSE)
+      - PRIMARY KEY (staff_id, activity_id)
+   7. StaffAvailability Table
+      - staff_id (INTEGER, FOREIGN KEY)
+      - day (INTEGER) - 1 (Monday) to 7 (Sunday)
+      - period (INTEGER)
+      - is_available (BOOLEAN DEFAULT TRUE)
+      - PRIMARY KEY (staff_id, day, period)
+   8. Trip Table
+      - id (INTEGER PRIMARY KEY)
+      - name (TEXT NOT NULL)
+      - group_id (INTEGER, FOREIGN KEY)
+      - day (INTEGER) - 1 (Monday) to 7 (Sunday)
+      - start_period (INTEGER)
+      - end_period (INTEGER)
+      - required_staff_count (INTEGER DEFAULT 1)
+   9. TripStaffAssignment Table
+      - trip_id (INTEGER, FOREIGN KEY)
+      - staff_id (INTEGER, FOREIGN KEY)
+      - PRIMARY KEY (trip_id, staff_id)
+   10. Schedule Table
+       - id (INTEGER PRIMARY KEY)
+       - name (TEXT NOT NULL)
+       - created_at (TIMESTAMP)
+       - status (TEXT) - 'draft', 'finalized'
+   11. ScheduleAssignment Table
+       - schedule_id (INTEGER, FOREIGN KEY)
+       - group_id (INTEGER, FOREIGN KEY)
+       - day (INTEGER) - 1 (Monday) to 7 (Sunday)
+       - period (INTEGER)
+       - activity_id (INTEGER, FOREIGN KEY)
+       - location_id (INTEGER, FOREIGN KEY)
+       - PRIMARY KEY (schedule_id, group_id, day, period)
+
+2. Database Initialization (app/database/db.py)
+   1. Simple database connection function
+      - Configure SQLite connection with foreign key support
+      - Basic error handling
+   2. Database initialization function
+      - Create tables if they don't exist using SQL scripts
+      - Single-file schema creation approach
+
+3. Simplified Model Layer (app/models/)
+   1. Lightweight Pydantic-compatible model classes
+      - Base models with field validation
+      - Type hints for all fields
+      - Inheritance structure for shared properties
+   2. Entity models with serialization methods
+      - Staff (app/models/staff.py)
+      - Activity (app/models/activity.py)
+      - Location (app/models/location.py)
+      - Group (app/models/group.py)
+      - Schedule (app/models/schedule.py)
+   3. Request/response models (future API integration)
+      - Create*Request models (e.g., CreateStaffRequest)
+      - Update*Request models (e.g., UpdateActivityRequest)
+      - Response models (e.g., ScheduleResponse)
+
+4. Data Access Functions (app/database/queries.py)
+   1. Organized by entity type with basic operations:
+      - get_all_staff()
+      - get_staff_by_id(staff_id)
+      - add_staff(staff_object)
+      - update_staff(staff_object)
+      - delete_staff(staff_id)
+      - Similar functions for all other entities
+   2. Essential specialized queries:
+      - get_staff_for_activity(activity_id, as_lead=True)
+      - get_locations_for_activity(activity_id)
+      - get_available_staff(day, period)
+      - get_schedule_for_group(schedule_id, group_id)
+   3. Transaction support for multi-table operations
+      - with_transaction(func) decorator
+      - commit_or_rollback() utility function
+
+5. CSV Import/Export (app/utils/csv_handler.py)
+   1. Simple CSV import functions for each entity
+      - import_staff_from_csv(file_path)
+      - import_activities_from_csv(file_path)
+      - import_qualifications_from_csv(file_path)
+   2. Basic CSV export functions
+      - export_staff_to_csv(file_path)
+      - export_schedule_to_csv(schedule_id, file_path)
+   3. CSV validation utilities
+      - validate_csv_headers(file_path, expected_headers)
+      - validate_csv_data(data, validators)
+
+6. Database Backup Function (app/utils/backup.py)
+   1. Simple backup implementation
+      - create_backup(backup_path)
+      - restore_from_backup(backup_path)
+   2. Utility function for database verification
+      - verify_database_integrity()
+
+7. Integration with Scheduler (app/scheduler.py)
+   1. Functions to load data from database
+      - load_staff_data()
+      - load_activity_data()
+      - load_availability_data()
+   2. Functions to save generated schedules
+      - save_schedule(schedule_data)
+      - update_schedule_status(schedule_id, status)
+   3. Service layer adaptors (future API integration)
+      - SchedulerService class with methods
+      - Database connection management
+      - Result formatting for API responses
+
+8. Core Test Suite (tests/database_tests.py)
+   1. Essential database tests
+      - test_database_creation()
+      - test_data_insertion()
+      - test_data_retrieval()
+      - test_csv_import_export()
+      - test_scheduler_integration()
+
+9. API Preparation Layer (app/services/api_service.py)
+   1. Service interface definitions
+      - StaffService class (get_staff, create_staff, etc.)
+      - ActivityService class (get_activity, create_activity, etc.)
+      - ScheduleService class (generate_schedule, get_schedule, etc.)
+   2. Implementation of service classes using database functions
+      - Each method maps to corresponding database operations
+      - Proper error handling with descriptive messages
+      - Input validation using model validation
+   3. Response formatting utilities
+      - format_response() for consistent API responses
+      - handle_error() for standardized error responses
 
 ### Backend API
 Convert the basic python files into a lightweight REST API service.
