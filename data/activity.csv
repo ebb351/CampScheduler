@@ -1,31 +1,31 @@
-activityID,activityName,numStaffReq,duration
-1,waterfront,4,1
-2,tennis,1,1
-3,hoops,1,1
-4,golf,1,1
-5,archery,1,1
-6,arts & crafts,1,1
-7,football,1,1
-8,street hockey,1,1
-9,batting cage,1,1
-10,ceramics,1,1
-11,climbing,2,1
-12,boxing,1,1
-13,newcomb,1,1
-14,theater,1,1
-15,ultimate,1,1
-16,weightlifting,1,1
-17,film studio,1,1
-18,baseball,1,1
-19,lacrosse,1,1
-20,fencing,1,1
-21,indoor soccer,1,1
-22,rocketry,1,1
-23,kickball,1,1
-24,the stu,1,1
-25,volleyball,1,1
-26,music shack,1,1
-27,manual arts,2,1
-28,newspaper,1,1
-29,frolf,1,1
-30,driving range,1,2
+activityID,activityName,numStaffReq,duration,category
+1,waterfront,4,1,fixed
+2,tennis,1,1,sports_ball
+3,hoops,1,1,sports_ball
+4,golf,1,1,sports_ball
+5,archery,1,1,sports_individual
+6,arts & crafts,1,1,arts
+7,football,1,1,sports_ball
+8,street hockey,1,1,sports_ball
+9,batting cage,1,1,sports_ball
+10,ceramics,1,1,arts
+11,climbing,2,1,sports_individual
+12,boxing,1,1,sports_individual
+13,newcomb,1,1,sports_ball
+14,theater,1,1,arts
+15,ultimate,1,1,sports_ball
+16,weightlifting,1,1,sports_individual
+17,film studio,1,1,arts
+18,baseball,1,1,sports_ball
+19,lacrosse,1,1,sports_ball
+20,fencing,1,1,sports_individual
+21,indoor soccer,1,1,sports_ball
+22,rocketry,1,1,arts
+23,kickball,1,1,sports_ball
+24,the stu,1,1,arts
+25,volleyball,1,1,sports_ball
+26,music shack,1,1,arts
+27,manual arts,2,1,arts
+28,newspaper,1,1,arts
+29,frolf,1,1,sports_ball
+30,driving range,1,2,sports_ball

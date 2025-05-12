@@ -4,6 +4,7 @@ from schedule_tests import run_tests
 from datetime import datetime
 import calendar
 import pandas as pd
+import time
 
 def map_dates_to_time_slots(dates):
     """
@@ -33,7 +34,8 @@ def map_dates_to_time_slots(dates):
 
 class Scheduler:
     def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
-                 staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips):
+                 staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips,
+                 optimization_weights=None):
         """
         Initialize the Scheduler with all necessary camp data.
         
@@ -49,6 +51,10 @@ class Scheduler:
         :param waterfront_schedule: Dictionary mapping group IDs to their waterfront time slots
         :param allowed_dr_days: List of days when driving range is permitted
         :param staff_trips: Dictionary mapping staff IDs to their trip assignments
+        :param optimization_weights: Dictionary of weights for optimization objectives
+            - workload_balance: weight for staff workload balancing objective
+            - staff_diversity: weight for staff activity diversity objective
+            - group_diversity: weight for group activity category diversity objective
         """
         self.staff_df = staff_df
         self.activity_df = activity_df
@@ -60,6 +66,18 @@ class Scheduler:
         self.leads_mapping = leads_mapping
         self.assists_mapping = assists_mapping
         self.waterfront_schedule = waterfront_schedule
+        self.allowed_dr_days = allowed_dr_days
+        self.staff_trips = staff_trips
+        
+        # Default optimization weights if none provided
+        if optimization_weights is None:
+            self.optimization_weights = {
+                'workload_balance': 1.0,  # Weight for staff workload balancing
+                'staff_diversity': 0.5,   # Weight for staff activity diversity
+                'group_diversity': 0.5    # Weight for group activity category diversity
+            }
+        else:
+            self.optimization_weights = optimization_weights
 
     def solve(self):
         """
@@ -82,6 +100,14 @@ class Scheduler:
         ].values[0]
         golf_id = self.activity_df.loc[self.activity_df["activityName"] == "golf", "activityID"].values[0]
         tennis_id = self.activity_df.loc[self.activity_df["activityName"] == "tennis", "activityID"].values[0]
+
+        # Create a dictionary to map activity IDs to their categories
+        activity_categories = {}
+        for _, row in self.activity_df.iterrows():
+            activity_categories[row['activityID']] = row['category']
+        
+        # Get unique activity categories
+        unique_categories = self.activity_df['category'].unique().tolist()
 
         # Initialize the constraint programming model
         model = cp_model.CpModel()
@@ -168,7 +194,7 @@ class Scheduler:
 
         # Create variables for driving range scheduling (special activity spanning two periods)
         for g in group_ids:
-            for day in allowed_dr_days:
+            for day in self.allowed_dr_days:
                 driving_range_day[g, day] = model.NewBoolVar(f"driving_range_g{g}_{day}")
                 for i in staff_ids:
                     driving_range_staff[g, day, i] = model.NewBoolVar(f"driving_range_g{g}_{day}_{i}")
@@ -176,16 +202,163 @@ class Scheduler:
         # Create variables for trip assignments (staff going on trips outside of camp)
         trip_name_list = set() # gather unique names from staff trips
         for i in staff_ids:
-            if i not in staff_trips:
+            if i not in self.staff_trips:
                 continue
-            for (k, trip_name) in staff_trips[i]:
+            for (k, trip_name) in self.staff_trips[i]:
                 trip_name_list.add(trip_name)
 
         for i in staff_ids:
-            if i not in staff_trips:
+            if i not in self.staff_trips:
                 continue
-            for (k, trip_name) in staff_trips[i]:
+            for (k, trip_name) in self.staff_trips[i]:
                 trip_assign[i,k, trip_name] = model.NewBoolVar(f"trip_{i}_{k[0]}_{k[1]}_{trip_name}")
+
+        #########################################
+        # OPTIMIZATION VARIABLES - STARTS HERE
+        #########################################
+        
+        # 1. Staff Workload Balance Variables
+        # Calculate total assignments for each staff member
+        staff_total_assignments = {}
+        for i in staff_ids:
+            # Count all regular activity assignments
+            staff_total_assignments[i] = model.NewIntVar(
+                0, 
+                len(activity_ids) * len(self.time_slots) * len(group_ids), 
+                f'staff_total_assignments_{i}'
+            )
+            
+            # Sum all assignments for this staff member across all activities, time slots, and groups
+            model.Add(
+                staff_total_assignments[i] == sum(
+                    staff_assign[i,j,k,g] 
+                    for j in activity_ids 
+                    for k in self.time_slots 
+                    for g in group_ids
+                )
+            )
+        
+        # Calculate average number of assignments per staff
+        total_assignments = model.NewIntVar(0, len(staff_ids) * len(activity_ids) * len(self.time_slots) * len(group_ids), 'total_assignments')
+        model.Add(total_assignments == sum(staff_total_assignments[i] for i in staff_ids))
+        
+        # We can't use division in CP-SAT directly, so we'll approximate the squared differences
+        # Create variables for staff workload imbalance (squared difference from average)
+        staff_workload_imbalance = {}
+        max_imbalance = len(self.time_slots) * len(group_ids)  # Maximum possible imbalance
+        
+        for i in staff_ids:
+            # For each staff, create variables to track absolute difference from average
+            # (we'll use this as an approximation of the squared difference)
+            staff_workload_imbalance[i] = model.NewIntVar(0, max_imbalance, f'staff_workload_imbalance_{i}')
+            
+            # Create helper variables for abs difference calculation
+            staff_abs_diff = model.NewIntVar(-max_imbalance, max_imbalance, f'staff_abs_diff_{i}')
+            
+            # Compute the difference from average (scaled by number of staff)
+            model.Add(staff_abs_diff * len(staff_ids) == staff_total_assignments[i] * len(staff_ids) - total_assignments)
+            
+            # Model absolute value: imbalance = |diff|
+            model.AddAbsEquality(staff_workload_imbalance[i], staff_abs_diff)
+        
+        # Total workload imbalance is the sum of individual imbalances
+        total_workload_imbalance = model.NewIntVar(0, max_imbalance * len(staff_ids), 'total_workload_imbalance')
+        model.Add(total_workload_imbalance == sum(staff_workload_imbalance[i] for i in staff_ids))
+        
+        # 2. Staff Activity Diversity Variables
+        # For each staff member and activity, count how many times they're assigned to that activity
+        staff_activity_count = {}
+        max_activity_count = len(self.time_slots) * len(group_ids)  # Maximum possible repetitions
+        
+        for i in staff_ids:
+            for j in activity_ids:
+                staff_activity_count[i,j] = model.NewIntVar(0, max_activity_count, f'staff_activity_count_{i}_{j}')
+                
+                # Sum all assignments of staff i to activity j across all time slots and groups
+                model.Add(
+                    staff_activity_count[i,j] == sum(
+                        staff_assign[i,j,k,g] 
+                        for k in self.time_slots 
+                        for g in group_ids
+                    )
+                )
+        
+        # Penalize activity repetitions: count cases where staff does same activity MORE THAN 4 TIMES
+        # (changed from the original implementation that penalized beyond 1 repetition)
+        staff_repeated_activities = model.NewIntVar(0, len(staff_ids) * len(activity_ids) * max_activity_count, 'staff_repeated_activities')
+        
+        # Sum up all the activity counts that are greater than 4
+        repeated_activity_terms = []
+        for i in staff_ids:
+            for j in activity_ids:
+                # Create a variable that's max(0, staff_activity_count[i,j] - 4)
+                excess_count = model.NewIntVar(0, max_activity_count - 4, f'excess_count_{i}_{j}')
+                
+                # If staff_activity_count[i,j] > 4, we want to count the excess (repetitions)
+                # staff_activity_count[i,j] - 4 if positive, otherwise 0
+                excess_indicator = model.NewBoolVar(f'excess_indicator_{i}_{j}')
+                model.Add(staff_activity_count[i,j] >= 5).OnlyEnforceIf(excess_indicator)
+                model.Add(staff_activity_count[i,j] <= 4).OnlyEnforceIf(excess_indicator.Not())
+                
+                model.Add(excess_count == staff_activity_count[i,j] - 4).OnlyEnforceIf(excess_indicator)
+                model.Add(excess_count == 0).OnlyEnforceIf(excess_indicator.Not())
+                
+                repeated_activity_terms.append(excess_count)
+        
+        model.Add(staff_repeated_activities == sum(repeated_activity_terms))
+        
+        # 3. Group Activity Diversity Variables
+        # Track category diversity for each group in each time slot
+        
+        # For each group, day, period, and category, track if that category is represented
+        group_has_category = {}
+        days = list(set(k[0] for k in self.time_slots))
+        periods = list(set(k[1] for k in self.time_slots))
+        
+        # Filter out "fixed" category (waterfront) from optimization
+        optimizable_categories = [cat for cat in unique_categories if cat != "fixed"]
+        
+        for g in group_ids:
+            for day in days:
+                for period in periods:
+                    for category in optimizable_categories:
+                        time_slot = (day, period)
+                        if time_slot in self.time_slots:  # Check if this time slot exists
+                            group_has_category[g, day, period, category] = model.NewBoolVar(
+                                f'group_has_category_{g}_{day}_{period}_{category}'
+                            )
+                            
+                            # Calculate if group g has any activity in this category during this time slot
+                            category_activities = [j for j in activity_ids if activity_categories.get(j) == category]
+                            
+                            # If any activity in this category is chosen, set group_has_category to 1
+                            model.Add(
+                                sum(activity_chosen[j, time_slot, g] for j in category_activities) >= 1
+                            ).OnlyEnforceIf(group_has_category[g, day, period, category])
+                            
+                            model.Add(
+                                sum(activity_chosen[j, time_slot, g] for j in category_activities) == 0
+                            ).OnlyEnforceIf(group_has_category[g, day, period, category].Not())
+        
+        # Count total category variety across all groups, days, and periods
+        # Only considering optimizable categories (excluding fixed/waterfront)
+        group_category_variety = model.NewIntVar(0, len(group_ids) * len(days) * len(periods) * len(optimizable_categories), 
+                                               'group_category_variety')
+        
+        model.Add(
+            group_category_variety == sum(
+                group_has_category[g, day, period, category]
+                for g in group_ids
+                for day in days
+                for period in periods
+                for category in optimizable_categories
+                if (day, period) in self.time_slots  # Only count valid time slots
+            )
+        )
+        
+        #########################################
+        # OPTIMIZATION VARIABLES - ENDS HERE
+        #########################################
 
         ##############
         # CONSTRAINTS:
@@ -237,7 +410,7 @@ class Scheduler:
         for g in group_ids:
             for k in self.time_slots:
                 # Skip waterfront slots which have special handling
-                if k in waterfront_schedule[g]:
+                if k in self.waterfront_schedule[g]:
                     continue # waterfront already handled
 
                 # For regular time slots:
@@ -337,7 +510,7 @@ class Scheduler:
 
         # Constraint 11: Waterfront scheduling
         # Waterfront must be scheduled at fixed times for each group and as the only activity
-        for g, timeslots in waterfront_schedule.items():
+        for g, timeslots in self.waterfront_schedule.items():
             for k in timeslots:
                 # 1) Must schedule waterfront in these designated slots
                 model.Add(activity_chosen[waterfront_id, k, g] == 1)
@@ -414,7 +587,7 @@ class Scheduler:
         # Each group must have driving range exactly once per week on an allowed day
         for g in group_ids:
             model.Add(
-                sum(driving_range_day[g, day] for day in allowed_dr_days) == 1
+                sum(driving_range_day[g, day] for day in self.allowed_dr_days) == 1
             )
 
         # Constraint 18: Driving range scheduling restrictions
@@ -431,13 +604,13 @@ class Scheduler:
                     for k in self.time_slots:
                         day, period = k
                         # If not an allowed day or period, driving range cannot be scheduled
-                        if day not in allowed_dr_days or period not in [1, 2]:
+                        if day not in self.allowed_dr_days or period not in [1, 2]:
                             model.Add(activity_chosen[j, k, g] == 0)
 
         # Constraint 19: Driving range period continuity
         # Driving range must be scheduled for both periods 1 and 2 on the same day
         for g in group_ids:
-            for day in allowed_dr_days:
+            for day in self.allowed_dr_days:
                 k1 = (day, 1)  # Period 1 slot
                 k2 = (day, 2)  # Period 2 slot
                 dr_day_var = driving_range_day[g, day]  # Boolean variable for driving range on this day
@@ -490,10 +663,10 @@ class Scheduler:
         # Constraint 23: Trip assignment enforcement
         # Staff members must be assigned to trips listed in the trips data
         for i in staff_ids:
-            if i not in staff_trips:
+            if i not in self.staff_trips:
                 continue
 
-            for (k, trip_name) in staff_trips[i]:
+            for (k, trip_name) in self.staff_trips[i]:
                 # Force assignment of staff to their scheduled trips
                 model.Add(
                     trip_assign[i,k, trip_name] == 1
@@ -502,10 +675,10 @@ class Scheduler:
         # Constraint 24: Trip exclusivity
         # Staff on trips cannot be assigned to other activities or inspection
         for i in staff_ids:
-            if i not in staff_trips:
+            if i not in self.staff_trips:
                 continue
 
-            for (k, trip_name) in staff_trips[i]:
+            for (k, trip_name) in self.staff_trips[i]:
                 # Staff on trips cannot be assigned to any regular activities
                 model.Add(
                     sum(staff_assign[i,j,k,g] for j in activity_ids for g in group_ids) == 0
@@ -518,12 +691,82 @@ class Scheduler:
                     ).OnlyEnforceIf(trip_assign[i,k, trip_name])
 
         # OBJECTIVE FUNCTION:
-        # Empty objective function (satisfy all constraints without optimization)
-        model.Minimize(0)
+        # Combine all optimization objectives with weights
+        
+        # Define objective weights from the instance variable
+        w_workload = self.optimization_weights['workload_balance']
+        w_staff_diversity = self.optimization_weights['staff_diversity']
+        w_group_diversity = self.optimization_weights['group_diversity']
+        
+        # Build the objective function: 
+        # - Minimize workload imbalance 
+        # - Minimize staff activity repetitions
+        # - Maximize group activity category diversity
+        
+        # Note: CP-SAT can only minimize, so we negate the terms we want to maximize
+        model.Minimize(
+            w_workload * total_workload_imbalance + 
+            w_staff_diversity * staff_repeated_activities - 
+            w_group_diversity * group_category_variety
+        )
 
         # Solve the constraint programming model
         solver = cp_model.CpSolver()
-        status = solver.Solve(model)
+        
+        # Set a time limit (in seconds) to prevent the solver from running indefinitely
+        solver.parameters.max_time_in_seconds = 600  # 10 minute time limit
+        
+        # Disable detailed logging but show basic progress
+        solver.parameters.log_search_progress = False
+        
+        print("Solving optimization problem... (this may take a few minutes)")
+        print(f"Time limit set to {solver.parameters.max_time_in_seconds} seconds")
+        
+        # Create a simple progress callback
+        class SolutionCallback(cp_model.CpSolverSolutionCallback):
+            """Simple callback to display optimization progress."""
+            
+            def __init__(self):
+                cp_model.CpSolverSolutionCallback.__init__(self)
+                self._solution_count = 0
+                self._start_time = time.time()
+                
+            def on_solution_callback(self):
+                """Called on each new solution."""
+                current_time = time.time()
+                obj = self.ObjectiveValue()
+                self._solution_count += 1
+                if self._solution_count % 50 == 0:  # Only print every 50th solution
+                    print(f"  Solution {self._solution_count} | Objective: {obj} | Time: {current_time - self._start_time:.1f}s")
+        
+        callback = SolutionCallback()
+        status = solver.Solve(model, callback)
+        
+        # Report solver status
+        print("\nSolver completed with status:", end=" ")
+        if status == cp_model.OPTIMAL:
+            print("OPTIMAL - Found guaranteed optimal solution")
+        elif status == cp_model.FEASIBLE:
+            print("FEASIBLE - Found a valid solution, but optimality not guaranteed")
+        elif status == cp_model.INFEASIBLE:
+            print("INFEASIBLE - Problem has no solution")
+        elif status == cp_model.MODEL_INVALID:
+            print("MODEL_INVALID - Model is invalid")
+        else:
+            print(f"OTHER - Status code: {status}")
+            
+        # Report optimization metrics if a solution was found
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            print(f"Time used by solver: {solver.WallTime():.2f} seconds")
+            
+            # If we have optimization variables in the model, report their values
+            if hasattr(self, 'optimization_weights') and self.optimization_weights:
+                print("\nOptimization metrics:")
+                # Print optimization values - these variables are in the current scope
+                print(f"- Staff workload imbalance: {solver.Value(total_workload_imbalance)}")
+                print(f"- Staff activity repetitions: {solver.Value(staff_repeated_activities)}")
+                print(f"- Group activity category variety: {solver.Value(group_category_variety)}")
+                print(f"- Weighted objective value: {solver.ObjectiveValue()}")
 
         # EXTRACT RESULTS
         # Build the schedule if a feasible solution was found
@@ -578,7 +821,7 @@ class Scheduler:
 
             # Extract driving range assignments
             for g in group_ids:
-                for day in allowed_dr_days:
+                for day in self.allowed_dr_days:
                     # Check if driving range is scheduled for this group and day
                     if solver.Value(driving_range_day[g, day]) == 1:
                         k1 = (day, 1)  # Period 1
@@ -638,9 +881,9 @@ class Scheduler:
 
             # Collect staff for each trip
             for i in staff_ids:
-                if i not in staff_trips:
+                if i not in self.staff_trips:
                     continue
-                trips_for_staff = staff_trips.get(i, [])
+                trips_for_staff = self.staff_trips.get(i, [])
                 for (slot, trip_name) in trips_for_staff:
                     key = (trip_name, slot)
                     if key not in trip_assignments:
@@ -766,8 +1009,16 @@ if __name__ == "__main__":
 
     allowed_dr_days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
 
+    # Define optimization weights
+    optimization_weights = {
+        'workload_balance': 1.0,  # Weight for staff workload balancing
+        'staff_diversity': 0.5,   # Weight for staff activity diversity
+        'group_diversity': 0.5    # Weight for group activity category diversity
+    }
+
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
-                          staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips)
+                          staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, 
+                          allowed_dr_days, staff_trips, optimization_weights)
     try:
         schedule = scheduler.solve()
 
@@ -795,7 +1046,10 @@ if __name__ == "__main__":
 
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
-        run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days)
+        run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, 
+                  staff_df, activity_df, leads_mapping, assists_mapping, 
+                  waterfront_schedule, inspection_slots, allowed_dr_days,
+                  staff_trips=staff_trips, trips_df=trips_df)
 
     except ValueError as e:
         print(f"Error: {e}")

@@ -1,3 +1,5 @@
+import pandas as pd
+
 def test_staff_non_overlap(schedule_df):
     """
     Tests that each staff member is not assigned to multiple activities in the same time slot.
@@ -754,6 +756,203 @@ def test_trip_staff_consistency(schedule_df):
                 
     return violations
 
+def analyze_staff_workload_distribution(schedule_df, staff_df):
+    """
+    Analyzes the distribution of activity assignments across staff members.
+    
+    This function calculates the minimum, average, and maximum number of activities 
+    assigned to each staff member, and identifies which staff members have the minimum
+    and maximum assignments.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param staff_df: DataFrame containing staff information
+    :return: Dictionary with summary statistics
+    """
+    # Create a normalized copy for analysis
+    analysis_df = schedule_df.copy()
+    
+    # Normalize staff column to individual staff members (in case staff is stored as lists)
+    if analysis_df['staff'].apply(lambda x: isinstance(x, list)).any():
+        analysis_df = analysis_df.explode('staff')
+    
+    # Count assignments per staff member
+    staff_assignments = analysis_df['staff'].value_counts().reset_index()
+    staff_assignments.columns = ['staff_name', 'assignment_count']
+    
+    # Calculate statistics
+    min_assignments = staff_assignments['assignment_count'].min()
+    max_assignments = staff_assignments['assignment_count'].max()
+    avg_assignments = staff_assignments['assignment_count'].mean()
+    
+    # Get staff with min and max assignments
+    min_staff = staff_assignments[staff_assignments['assignment_count'] == min_assignments]['staff_name'].tolist()
+    max_staff = staff_assignments[staff_assignments['assignment_count'] == max_assignments]['staff_name'].tolist()
+    
+    # Print the results
+    print("\n===== STAFF WORKLOAD DISTRIBUTION =====")
+    print(f"Minimum assignments: {min_assignments}")
+    print(f"Staff with minimum assignments ({min_assignments}): {', '.join(min_staff)}")
+    print(f"Average assignments: {avg_assignments:.2f}")
+    print(f"Maximum assignments: {max_assignments}")
+    print(f"Staff with maximum assignments ({max_assignments}): {', '.join(max_staff)}")
+    
+    # Calculate standard deviation to see how evenly distributed the workload is
+    std_dev = staff_assignments['assignment_count'].std()
+    print(f"Standard deviation: {std_dev:.2f} (lower is better - indicates more balanced workload)")
+    
+    return {
+        'min_assignments': min_assignments,
+        'min_staff': min_staff,
+        'avg_assignments': avg_assignments,
+        'max_assignments': max_assignments,
+        'max_staff': max_staff,
+        'std_dev': std_dev
+    }
+
+def analyze_staff_activity_diversity(schedule_df, staff_df):
+    """
+    Analyzes the diversity of activities assigned to each staff member.
+    
+    This function calculates the minimum, average, and maximum number of unique activities
+    that each staff member is assigned to, and identifies which staff members have the
+    minimum and maximum activity diversity.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param staff_df: DataFrame containing staff information
+    :return: Dictionary with summary statistics
+    """
+    # Create a normalized copy for analysis
+    analysis_df = schedule_df.copy()
+    
+    # Normalize staff column to individual staff members (in case staff is stored as lists)
+    if analysis_df['staff'].apply(lambda x: isinstance(x, list)).any():
+        analysis_df = analysis_df.explode('staff')
+    
+    # Group by staff and count unique activities
+    staff_activity_diversity = analysis_df.groupby('staff')['activity'].nunique().reset_index()
+    staff_activity_diversity.columns = ['staff_name', 'unique_activities']
+    
+    # Calculate statistics
+    min_activities = staff_activity_diversity['unique_activities'].min()
+    max_activities = staff_activity_diversity['unique_activities'].max()
+    avg_activities = staff_activity_diversity['unique_activities'].mean()
+    
+    # Get staff with min and max unique activities
+    min_staff = staff_activity_diversity[staff_activity_diversity['unique_activities'] == min_activities]['staff_name'].tolist()
+    max_staff = staff_activity_diversity[staff_activity_diversity['unique_activities'] == max_activities]['staff_name'].tolist()
+    
+    # Print the results
+    print("\n===== STAFF ACTIVITY DIVERSITY =====")
+    print(f"Minimum unique activities: {min_activities}")
+    print(f"Staff with minimum diversity ({min_activities}): {', '.join(min_staff)}")
+    print(f"Average unique activities: {avg_activities:.2f}")
+    print(f"Maximum unique activities: {max_activities}")
+    print(f"Staff with maximum diversity ({max_activities}): {', '.join(max_staff)}")
+    
+    # Calculate standard deviation
+    std_dev = staff_activity_diversity['unique_activities'].std()
+    print(f"Standard deviation: {std_dev:.2f}")
+    
+    # Also report staff with high repetition of the same activity
+    print("\nStaff with high activity repetition:")
+    staff_activity_counts = analysis_df.groupby(['staff', 'activity']).size().reset_index(name='count')
+    staff_with_repetition = staff_activity_counts[staff_activity_counts['count'] > 4]
+    
+    if len(staff_with_repetition) > 0:
+        for _, row in staff_with_repetition.sort_values('count', ascending=False).iterrows():
+            print(f"  {row['staff']} teaches {row['activity']} {row['count']} times")
+    else:
+        print("  No staff teaches the same activity more than 4 times")
+    
+    return {
+        'min_activities': min_activities,
+        'min_staff': min_staff,
+        'avg_activities': avg_activities,
+        'max_activities': max_activities,
+        'max_staff': max_staff,
+        'high_repetition': staff_with_repetition.to_dict('records') if len(staff_with_repetition) > 0 else []
+    }
+
+def analyze_group_category_diversity(schedule_df, activity_df):
+    """
+    Analyzes the diversity of activity categories assigned to each group in each period.
+    
+    This function calculates the average number of unique activity categories that each
+    group experiences in each time slot, providing insight into how varied the activities
+    are for campers throughout the schedule.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param activity_df: DataFrame containing activity information including categories
+    :return: Dictionary with summary statistics
+    """
+    # Create a normalized copy for analysis
+    analysis_df = schedule_df.copy()
+    
+    # Skip non-group activities
+    analysis_df = analysis_df[analysis_df['group'] != "NA"]
+    
+    # Create a mapping of activity names to categories
+    activity_categories = dict(zip(activity_df['activityName'], activity_df['category']))
+    
+    # Add category column to the analysis DataFrame
+    analysis_df['category'] = analysis_df['activity'].map(activity_categories)
+    
+    # Group by time_slot and group, then count unique categories
+    # First create a grouped object with each (time_slot, group) combination
+    category_counts = []
+    for (time_slot, group), group_df in analysis_df.groupby(['time_slot', 'group'], observed=False):
+        # Skip if group is NA
+        if group == "NA":
+            continue
+            
+        # Count unique categories, excluding "fixed" category (waterfront)
+        unique_categories = group_df[group_df['category'] != 'fixed']['category'].nunique()
+        
+        # Store in our results list
+        category_counts.append({
+            'time_slot': time_slot,
+            'group': group,
+            'unique_categories': unique_categories
+        })
+    
+    # Convert to DataFrame for analysis
+    category_df = pd.DataFrame(category_counts)
+    
+    # Calculate statistics
+    if len(category_df) > 0:  # Ensure there are records to analyze
+        avg_categories = category_df['unique_categories'].mean()
+        min_categories = category_df['unique_categories'].min()
+        max_categories = category_df['unique_categories'].max()
+        
+        # Find time slots with min and max diversity
+        min_slots = category_df[category_df['unique_categories'] == min_categories]
+        max_slots = category_df[category_df['unique_categories'] == max_categories]
+        
+        # Print the results
+        print("\n===== GROUP ACTIVITY CATEGORY DIVERSITY =====")
+        print(f"Average unique categories per group per period: {avg_categories:.2f}")
+        print(f"Minimum categories in a period: {min_categories}")
+        print(f"Maximum categories in a period: {max_categories}")
+        
+        print("\nCategory diversity by group:")
+        for group, group_df in category_df.groupby('group', observed=False):
+            avg_for_group = group_df['unique_categories'].mean()
+            print(f"  Group {group}: {avg_for_group:.2f} avg categories per period")
+        
+        return {
+            'avg_categories': avg_categories,
+            'min_categories': min_categories,
+            'max_categories': max_categories,
+            'min_slots': min_slots.to_dict('records'),
+            'max_slots': max_slots.to_dict('records')
+        }
+    else:
+        print("\n===== GROUP ACTIVITY CATEGORY DIVERSITY =====")
+        print("No valid data for category diversity analysis")
+        return {
+            'error': 'No valid data for analysis'
+        }
+
 def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, staff_trips=None, trips_df=None):
     """
     Runs all validation tests on the generated schedule and reports the results.
@@ -870,3 +1069,11 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
         print("Trip Staff Consistency Violations:", trip_staff_consistency_violations)
     else:
         print("Trip Staff Consistency: PASSED")
+        
+    # Run optimization metric analyses
+    print("\n========================================")
+    print("SCHEDULE OPTIMIZATION METRICS ANALYSIS")
+    print("========================================")
+    analyze_staff_workload_distribution(schedule_df, staff_df)
+    analyze_staff_activity_diversity(schedule_df, staff_df)
+    analyze_group_category_diversity(schedule_df, activity_df)
