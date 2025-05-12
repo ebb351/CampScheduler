@@ -25,15 +25,15 @@ This project uses Google's OR-Tools constraint programming solver to create opti
 	6. DONE Incorporate trip scheduling and staff assignments
 	7. Specify exact number of off periods a staff member gets some week (defaults to 2)
 2. Optimization Objective Function with Google's OR-Tools
-	1. Key optimization variables
-		1. Minimize staff workload imbalance: distribute assignments evenly across staff
-			1. I.e. miniminze: $\sum_i (\text{total assignments for staff } i - \text{average assignments})^2$ 
-		2. Maximize staff activitity diversity: avoid assigning the same activity to the same staff too much
-		3. Maximize group activity diversity: ensure groups experience a mix of arts/sports each period
-			1. Maximize: $\sum_{g,p,d} v_{g,p,d}$ where $v_{g,p,d}$ measures the variety of activity categories for group $g$, period $p$, day $d$
-	2. Hyperparams
-		1. Ability to assign weights in optimization function
-			1. I.e. $\text{objective} = \lambda_1 \cdot \text{Workload Imbalance} - \lambda_2 \cdot \text{Schedule Diversity} + \lambda_3 \cdot \text{Constraint Violations}$
+	1. DONE Key optimization variables
+		1. DONE Minimize staff workload imbalance: distribute assignments evenly across staff
+			1. DONE I.e. miniminze: $\sum_i (\text{total assignments for staff } i - \text{average assignments})^2$ 
+		2. DONE Maximize staff activitity diversity: avoid assigning the same activity to the same staff too much
+		3. DONE Maximize group activity diversity: ensure groups experience a mix of arts/sports each period
+			1. DONE Maximize: $\sum_{g,p,d} v_{g,p,d}$ where $v_{g,p,d}$ measures the variety of activity categories for group $g$, period $p$, day $d$
+	2. DONE Hyperparams
+		1. DONE Ability to assign weights in optimization function
+			1. DONE I.e. $\text{objective} = \lambda_1 \cdot \text{Workload Imbalance} - \lambda_2 \cdot \text{Schedule Diversity} + \lambda_3 \cdot \text{Constraint Violations}$
 3. Initial data model
 	1. DONE CSV based data management for all scheduling parameters
 	2. DONE Support for multiple staff roles (leads vs assists)
@@ -43,6 +43,23 @@ This project uses Google's OR-Tools constraint programming solver to create opti
 	1. DONE Verify no scheduling conflicts exist
 	2. DONE Confirm each constraint is properly satisfied
 	3. DONE Check special scheduling rules are followed
+
+### Data Management
+Use a simple SQLite database for data persistence with CSV import/export capabilities.
+Detailed Steps:
+1. Design streamlined database schema
+   1. Create tables for core entity types (staff, activities, locations)
+   2. Keep relationships simple and intuitive
+2. Implement basic ORM
+   1. Define models that map to database tables
+   2. Create simple data access methods
+3. Prioritize CSV compatibility
+   1. Create user-friendly import tools for CSV files
+   2. Implement export services to generate CSV files from database data
+   3. Add validation during import with clear error messages
+4. Create backup functionality
+   1. Add simple database backup feature
+   2. Implement restore capability for recovery
 
 ### Backend API
 Convert the basic python files into a lightweight REST API service.
@@ -63,23 +80,6 @@ Detailed Steps:
    1. POST `/api/schedule/generate` to create new schedules
    2. PUT `/api/schedule/{id}` to update existing schedules
    3. Include validation to verify constraints are satisfied
-
-### Data Management
-Use a simple SQLite database for data persistence with CSV import/export capabilities.
-Detailed Steps:
-1. Design streamlined database schema
-   1. Create tables for core entity types (staff, activities, locations)
-   2. Keep relationships simple and intuitive
-2. Implement basic ORM
-   1. Define models that map to database tables
-   2. Create simple data access methods
-3. Prioritize CSV compatibility
-   1. Create user-friendly import tools for CSV files
-   2. Implement export services to generate CSV files from database data
-   3. Add validation during import with clear error messages
-4. Create backup functionality
-   1. Add simple database backup feature
-   2. Implement restore capability for recovery
 
 ### Frontend Components
 Develop a simple, intuitive interface focused on core functionality.
