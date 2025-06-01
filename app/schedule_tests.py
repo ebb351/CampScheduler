@@ -756,6 +756,59 @@ def test_trip_staff_consistency(schedule_df):
                 
     return violations
 
+def test_daily_activity_repetition_for_groups(schedule_df, activity_df):
+    """
+    Tests that no group has the same activity scheduled more than once on the same day,
+    excluding activities with duration > 1 (e.g., driving range).
+
+    Validates Constraint 25: No group can have the same activity twice in the same day.
+
+    :param schedule_df: DataFrame containing the generated schedule
+    :param activity_df: DataFrame containing activity information (including duration)
+    :return: List of violations, each as a dictionary with details
+    """
+    violations = []
+
+    # Filter out non-group activities (e.g., inspection, trips)
+    group_schedule_df = schedule_df[schedule_df['group'] != "NA"].copy()
+
+    if group_schedule_df.empty:
+        return violations
+
+    # Identify activities with duration > 1, these should be excluded from the check
+    multi_period_activities = set(
+        activity_df[activity_df['duration'] > 1]['activityName']
+    )
+
+    # Extract day from time_slot
+    group_schedule_df['day'] = group_schedule_df['time_slot'].apply(lambda ts: ts[0])
+    group_schedule_df['period'] = group_schedule_df['time_slot'].apply(lambda ts: ts[1]) # Add period column
+
+    # Group by group and day, then check activity counts
+    for (group_id, day), daily_schedule_for_group in group_schedule_df.groupby(['group', 'day'], observed=False):
+        # Filter out multi-period activities before counting repetitions
+        activities_to_check_today = daily_schedule_for_group[
+            ~daily_schedule_for_group['activity'].isin(multi_period_activities)
+        ]
+        
+        if activities_to_check_today.empty:
+            continue
+
+        # For each activity name, count how many distinct periods it appears in for this group on this day
+        activity_period_counts = activities_to_check_today.groupby('activity')['period'].nunique()
+        
+        repeated_activities = activity_period_counts[activity_period_counts > 1]
+
+        for activity_name, period_count in repeated_activities.items(): # period_count is the number of distinct periods
+            violations.append({
+                "group": group_id,
+                "day": day,
+                "activity": activity_name,
+                "count": period_count, # This is now the count of distinct periods
+                "message": f"Activity '{activity_name}' scheduled in {period_count} different periods for group {group_id} on {day}."
+            })
+    return violations
+
 def analyze_staff_workload_distribution(schedule_df, staff_df):
     """
     Analyzes the distribution of activity assignments across staff members.
@@ -953,6 +1006,108 @@ def analyze_group_category_diversity(schedule_df, activity_df):
             'error': 'No valid data for analysis'
         }
 
+def analyze_group_weekly_activity_diversity(schedule_df, activity_df):
+    """
+    Analyzes the diversity of unique activities each group experiences weekly.
+
+    Calculates the percentage of total possible activities that each group is
+    scheduled for at least once during the week.
+
+    :param schedule_df: DataFrame containing the generated schedule
+    :param activity_df: DataFrame containing activity information (e.g., from activity.csv)
+    :return: Dictionary with summary statistics
+    """
+    print("\n===== GROUP WEEKLY ACTIVITY DIVERSITY ANALYSIS =====")
+
+    # Validate input data - check if activity DataFrame is empty
+    if activity_df.empty:
+        print("Activity data is empty. Cannot perform weekly diversity analysis.")
+        return {'error': 'Activity data empty'}
+
+    # Calculate the total number of unique activities available in the system
+    total_possible_activities = activity_df['activityName'].nunique()
+    if total_possible_activities == 0:
+        print("No unique activities found in activity data. Cannot perform weekly diversity analysis.")
+        return {'error': 'No unique activities in activity data'}
+    
+    print(f"Total possible unique activities: {total_possible_activities}")
+
+    # Filter the schedule to only include group activities (exclude inspection, trips, etc.)
+    # Activities with group "NA" are typically special activities like inspection or trips
+    group_schedule_df = schedule_df[schedule_df['group'] != "NA"].copy()
+
+    # Check if we have any group activities to analyze
+    if group_schedule_df.empty:
+        print("No group-specific activities found in the schedule to analyze.")
+        return {
+            'min_percentage': 0,
+            'min_group': [],
+            'avg_percentage': 0,
+            'max_percentage': 0,
+            'max_group': [],
+            'group_details': []
+        }
+
+    # Calculate diversity statistics for each group
+    group_diversity_stats = []
+    
+    # Iterate through each group to analyze their activity diversity
+    for group_id, activities_for_group_df in group_schedule_df.groupby('group', observed=False):
+        # Count how many unique activities this group is assigned to during the week
+        unique_activities_count = activities_for_group_df['activity'].nunique()
+        
+        # Calculate what percentage of all possible activities this group experiences
+        percentage_diversity = (unique_activities_count / total_possible_activities) * 100
+        
+        # Store the results for this group
+        group_diversity_stats.append({
+            'group': group_id,
+            'unique_activities_count': unique_activities_count,
+            'percentage_diversity': percentage_diversity
+        })
+        
+        # Print individual group results
+        print(f"Group {group_id}: {percentage_diversity:.2f}% ({unique_activities_count} unique activities)")
+
+    # Validate that we have data to analyze
+    if not group_diversity_stats:
+        print("No data to calculate diversity statistics.")
+        return {
+            'min_percentage': 0,
+            'min_group': [],
+            'avg_percentage': 0,
+            'max_percentage': 0,
+            'max_group': [],
+            'group_details': []
+        }
+
+    # Convert results to DataFrame for easier statistical analysis
+    diversity_df = pd.DataFrame(group_diversity_stats)
+
+    # Calculate summary statistics across all groups
+    min_percentage = diversity_df['percentage_diversity'].min()
+    max_percentage = diversity_df['percentage_diversity'].max()
+    avg_percentage = diversity_df['percentage_diversity'].mean()
+
+    # Identify which groups have the minimum and maximum diversity
+    min_groups = diversity_df[diversity_df['percentage_diversity'] == min_percentage]['group'].tolist()
+    max_groups = diversity_df[diversity_df['percentage_diversity'] == max_percentage]['group'].tolist()
+
+    # Print summary statistics
+    print(f"Minimum weekly activity diversity: {min_percentage:.2f}% (Group(s): {', '.join(map(str, min_groups))})")
+    print(f"Average weekly activity diversity: {avg_percentage:.2f}%")
+    print(f"Maximum weekly activity diversity: {max_percentage:.2f}% (Group(s): {', '.join(map(str, max_groups))})")
+    
+    # Return comprehensive results dictionary
+    return {
+        'min_percentage': min_percentage,
+        'min_groups': min_groups,
+        'avg_percentage': avg_percentage,
+        'max_percentage': max_percentage,
+        'max_groups': max_groups,
+        'group_details': group_diversity_stats
+    }
+
 def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, staff_trips=None, trips_df=None):
     """
     Runs all validation tests on the generated schedule and reports the results.
@@ -976,7 +1131,9 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     :param trips_df: DataFrame containing trip information
     """
 
-    print("Running Tests...")
+    print("\n========================================")
+    print("SCHEDULE VALIDITY TESTS")
+    print("========================================")
     staff_overlap_violations = test_staff_non_overlap(schedule_df)
     staff_availability_violations = test_staff_availability(schedule_df, staff_off_time_slots, staff_df)
     location_violations = test_location_non_overlap(schedule_df)
@@ -988,6 +1145,9 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     inspection_violations = test_inspection_daily(schedule_df, inspection_slots)
     driving_range_violations = test_driving_range_constraints(schedule_df, group_ids, allowed_dr_days)
     
+    # Test for daily activity repetition for groups
+    daily_activity_repetition_violations = test_daily_activity_repetition_for_groups(schedule_df, activity_df)
+
     # Run trip-related tests if the data is provided
     trip_assignment_violations = []
     trip_time_slot_violations = []
@@ -1052,6 +1212,11 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     else:
         print("Driving Range Check: PASSED")
         
+    if daily_activity_repetition_violations:
+        print("Daily Activity Repetition for Groups Violations:", daily_activity_repetition_violations)
+    else:
+        print("Daily Activity Repetition for Groups: PASSED")
+        
     # Report trip test results if they were run
     if staff_trips is not None:
         if trip_assignment_violations:
@@ -1077,3 +1242,4 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     analyze_staff_workload_distribution(schedule_df, staff_df)
     analyze_staff_activity_diversity(schedule_df, staff_df)
     analyze_group_category_diversity(schedule_df, activity_df)
+    analyze_group_weekly_activity_diversity(schedule_df, activity_df)

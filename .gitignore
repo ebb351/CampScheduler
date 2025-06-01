@@ -2,4 +2,5 @@
 .venv/
 .idea/
 
-
+# generated schedules
+group_schedules/

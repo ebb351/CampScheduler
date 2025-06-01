@@ -5,6 +5,7 @@ from datetime import datetime
 import calendar
 import pandas as pd
 import time
+import os
 
 def map_dates_to_time_slots(dates):
     """
@@ -74,7 +75,8 @@ class Scheduler:
             self.optimization_weights = {
                 'workload_balance': 1.0,  # Weight for staff workload balancing
                 'staff_diversity': 0.5,   # Weight for staff activity diversity
-                'group_diversity': 0.5    # Weight for group activity category diversity
+                'group_diversity': 1.0,   # Weight for group activity category diversity
+                'group_weekly_diversity': 0.5 # Weight for group unique activity diversity per week
             }
         else:
             self.optimization_weights = optimization_weights
@@ -356,6 +358,40 @@ class Scheduler:
             )
         )
         
+        # 4. Group Weekly Unique Activity Diversity Variables
+        # For each group and activity, track if the group does that activity at least once a week
+        group_has_activity_weekly = {}
+        for g in group_ids:
+            for j in activity_ids:
+                group_has_activity_weekly[g, j] = model.NewBoolVar(
+                    f'group_has_activity_weekly_{g}_{j}'
+                )
+                
+                # Sum of occurrences of activity j for group g throughout the week
+                sum_activity_occurrences_for_group_week = sum(
+                    activity_chosen[j, k, g] for k in self.time_slots
+                )
+                
+                # Link group_has_activity_weekly to sum_activity_occurrences_for_group_week
+                # If sum >= 1, group_has_activity_weekly must be true
+                model.Add(sum_activity_occurrences_for_group_week >= 1).OnlyEnforceIf(group_has_activity_weekly[g, j])
+                # If sum == 0, group_has_activity_weekly must be false
+                model.Add(sum_activity_occurrences_for_group_week == 0).OnlyEnforceIf(group_has_activity_weekly[g, j].Not())
+
+        # Total count of unique group-activity pairs for the week
+        total_group_weekly_activity_diversity = model.NewIntVar(
+            0, 
+            len(group_ids) * len(activity_ids), 
+            'total_group_weekly_activity_diversity'
+        )
+        model.Add(
+            total_group_weekly_activity_diversity == sum(
+                group_has_activity_weekly[g, j]
+                for g in group_ids
+                for j in activity_ids
+            )
+        )
+
         #########################################
         # OPTIMIZATION VARIABLES - ENDS HERE
         #########################################
@@ -690,6 +726,32 @@ class Scheduler:
                         inspection_slot[i,k] == 0
                     ).OnlyEnforceIf(trip_assign[i,k, trip_name])
 
+        # Constraint 25: No group can have the same activity twice in the same day
+        days = list(set(k[0] for k in self.time_slots)) # Extract unique days
+        periods = list(set(k[1] for k in self.time_slots)) # Extract unique periods
+
+        for g in group_ids:
+            for j in activity_ids: # j is activityID
+                # Check the duration of the activity
+                activity_duration = self.activity_df.loc[self.activity_df["activityID"] == j, "duration"].iloc[0]
+                
+                # If the activity's duration is greater than 1, skip this constraint for this activity
+                if activity_duration > 1:
+                    continue
+
+                for day in days:
+                    # Sum of activity_chosen for this group, activity, on this day (across all periods)
+                    daily_activity_occurrences = []
+                    for period in periods:
+                        time_slot = (day, period)
+                        # Ensure the time slot exists before trying to access activity_chosen
+                        if time_slot in self.time_slots:
+                             daily_activity_occurrences.append(activity_chosen[j, time_slot, g])
+                    
+                    # Only add constraint if there are any occurrences for this day (i.e., list is not empty)
+                    if daily_activity_occurrences:
+                        model.Add(sum(daily_activity_occurrences) <= 1)
+
         # OBJECTIVE FUNCTION:
         # Combine all optimization objectives with weights
         
@@ -697,17 +759,20 @@ class Scheduler:
         w_workload = self.optimization_weights['workload_balance']
         w_staff_diversity = self.optimization_weights['staff_diversity']
         w_group_diversity = self.optimization_weights['group_diversity']
+        w_group_weekly_diversity = self.optimization_weights['group_weekly_diversity']
         
         # Build the objective function: 
         # - Minimize workload imbalance 
         # - Minimize staff activity repetitions
         # - Maximize group activity category diversity
+        # - Maximize group unique activity diversity per week
         
         # Note: CP-SAT can only minimize, so we negate the terms we want to maximize
         model.Minimize(
             w_workload * total_workload_imbalance + 
             w_staff_diversity * staff_repeated_activities - 
-            w_group_diversity * group_category_variety
+            w_group_diversity * group_category_variety -
+            w_group_weekly_diversity * total_group_weekly_activity_diversity
         )
 
         # Solve the constraint programming model
@@ -766,6 +831,7 @@ class Scheduler:
                 print(f"- Staff workload imbalance: {solver.Value(total_workload_imbalance)}")
                 print(f"- Staff activity repetitions: {solver.Value(staff_repeated_activities)}")
                 print(f"- Group activity category variety: {solver.Value(group_category_variety)}")
+                print(f"- Group weekly unique activities: {solver.Value(total_group_weekly_activity_diversity)}")
                 print(f"- Weighted objective value: {solver.ObjectiveValue()}")
 
         # EXTRACT RESULTS
@@ -1013,7 +1079,8 @@ if __name__ == "__main__":
     optimization_weights = {
         'workload_balance': 1.0,  # Weight for staff workload balancing
         'staff_diversity': 0.5,   # Weight for staff activity diversity
-        'group_diversity': 0.5    # Weight for group activity category diversity
+        'group_diversity': 0.5,   # Weight for group activity category diversity
+        'group_weekly_diversity': 0.5 # Weight for group unique activity diversity per week
     }
 
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
@@ -1044,6 +1111,31 @@ if __name__ == "__main__":
                         f"Location: {row['location']}"
                     )
 
+        # --- NEW: Save group schedules as CSVs ---
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'group_schedules')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Prepare day and period lists
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        periods = [1, 2, 3]
+        all_groups = group_ids + ["NA"]
+
+        for group in all_groups:
+            # Filter schedule for this group
+            group_sched = schedule_df[schedule_df['group'] == group]
+            # Build a DataFrame with periods as rows, days as columns
+            sched_matrix = pd.DataFrame(index=periods, columns=days)
+            for day in days:
+                for period in periods:
+                    # Find all activities for this group, day, period
+                    acts = group_sched[(group_sched['time_slot'] == (day, period))]['activity'].tolist()
+                    # Join activity names with ", " if multiple
+                    sched_matrix.at[period, day] = ', '.join(acts) if acts else ''
+            # Save to CSV
+            group_name = f"group_{group}" if group != "NA" else "special_NA"
+            sched_matrix.to_csv(os.path.join(output_dir, f"{group_name}_schedule.csv"))
+        # --- END NEW ---
+        
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
         run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, 

@@ -29,8 +29,9 @@ This project uses Google's OR-Tools constraint programming solver to create opti
 		1. DONE Minimize staff workload imbalance: distribute assignments evenly across staff
 			1. DONE I.e. miniminze: $\sum_i (\text{total assignments for staff } i - \text{average assignments})^2$ 
 		2. DONE Maximize staff activitity diversity: avoid assigning the same activity to the same staff too much
-		3. DONE Maximize group activity diversity: ensure groups experience a mix of arts/sports each period
+		3. DONE Maximize group activity type diversity per period: ensure groups experience a mix of arts/sports each period
 			1. DONE Maximize: $\sum_{g,p,d} v_{g,p,d}$ where $v_{g,p,d}$ measures the variety of activity categories for group $g$, period $p$, day $d$
+      4. Maximize group activity diversityu per week.
 	2. DONE Hyperparams
 		1. DONE Ability to assign weights in optimization function
 			1. DONE I.e. $\text{objective} = \lambda_1 \cdot \text{Workload Imbalance} - \lambda_2 \cdot \text{Schedule Diversity} + \lambda_3 \cdot \text{Constraint Violations}$
