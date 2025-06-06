@@ -53,7 +53,6 @@ class Scheduler:
         :param allowed_dr_days: List of days when driving range is permitted
         :param staff_trips: Dictionary mapping staff IDs to their trip assignments
         :param optimization_weights: Dictionary of weights for optimization objectives
-            - workload_balance: weight for staff workload balancing objective
             - staff_diversity: weight for staff activity diversity objective
             - group_diversity: weight for group activity category diversity objective
         """
@@ -73,10 +72,10 @@ class Scheduler:
         # Default optimization weights if none provided
         if optimization_weights is None:
             self.optimization_weights = {
-                'workload_balance': 1.0,  # Weight for staff workload balancing
                 'staff_diversity': 0.5,   # Weight for staff activity diversity
                 'group_diversity': 1.0,   # Weight for group activity category diversity
-                'group_weekly_diversity': 0.5 # Weight for group unique activity diversity per week
+                'group_weekly_diversity': 0.5, # Weight for group unique activity diversity per week
+                'unassigned_periods_balance': 0.25 # Balances unassigned periods for staff
             }
         else:
             self.optimization_weights = optimization_weights
@@ -219,8 +218,8 @@ class Scheduler:
         # OPTIMIZATION VARIABLES - STARTS HERE
         #########################################
         
-        # 1. Staff Workload Balance Variables
-        # Calculate total assignments for each staff member
+        # 1. Staff Total Assignments
+        # Calculate total assignments for each staff member for use in other optimization variables
         staff_total_assignments = {}
         for i in staff_ids:
             # Count all regular activity assignments
@@ -239,33 +238,6 @@ class Scheduler:
                     for g in group_ids
                 )
             )
-        
-        # Calculate average number of assignments per staff
-        total_assignments = model.NewIntVar(0, len(staff_ids) * len(activity_ids) * len(self.time_slots) * len(group_ids), 'total_assignments')
-        model.Add(total_assignments == sum(staff_total_assignments[i] for i in staff_ids))
-        
-        # We can't use division in CP-SAT directly, so we'll approximate the squared differences
-        # Create variables for staff workload imbalance (squared difference from average)
-        staff_workload_imbalance = {}
-        max_imbalance = len(self.time_slots) * len(group_ids)  # Maximum possible imbalance
-        
-        for i in staff_ids:
-            # For each staff, create variables to track absolute difference from average
-            # (we'll use this as an approximation of the squared difference)
-            staff_workload_imbalance[i] = model.NewIntVar(0, max_imbalance, f'staff_workload_imbalance_{i}')
-            
-            # Create helper variables for abs difference calculation
-            staff_abs_diff = model.NewIntVar(-max_imbalance, max_imbalance, f'staff_abs_diff_{i}')
-            
-            # Compute the difference from average (scaled by number of staff)
-            model.Add(staff_abs_diff * len(staff_ids) == staff_total_assignments[i] * len(staff_ids) - total_assignments)
-            
-            # Model absolute value: imbalance = |diff|
-            model.AddAbsEquality(staff_workload_imbalance[i], staff_abs_diff)
-        
-        # Total workload imbalance is the sum of individual imbalances
-        total_workload_imbalance = model.NewIntVar(0, max_imbalance * len(staff_ids), 'total_workload_imbalance')
-        model.Add(total_workload_imbalance == sum(staff_workload_imbalance[i] for i in staff_ids))
         
         # 2. Staff Activity Diversity Variables
         # For each staff member and activity, count how many times they're assigned to that activity
@@ -391,6 +363,43 @@ class Scheduler:
                 for j in activity_ids
             )
         )
+
+        # 5. Staff Unassigned Periods Balance
+        # Objective to have each staff member have approximately 2 unassigned periods per week
+        target_unassigned_periods = 2
+        
+        # Get all period 1 time slots for inspection calculation
+        period_one_slots = [k for k in self.time_slots if k[1] == 1]
+
+        unassigned_dev_terms = []
+        for i in staff_ids:
+            # Calculate available slots (not off, not on a trip)
+            staff_off_slots = self.staff_off_time_slots.get(i, [])
+            staff_trip_slots = [trip[0] for trip in self.staff_trips.get(i, [])]
+            available_slots = [k for k in self.time_slots if k not in staff_off_slots and k not in staff_trip_slots]
+            num_available_slots = len(available_slots)
+
+            # Total periods worked by staff (activities + inspections)
+            total_work_periods = model.NewIntVar(0, len(self.time_slots), f'total_work_periods_{i}')
+            
+            # Sum of activity assignments (already calculated in staff_total_assignments)
+            # Sum of inspection assignments
+            inspection_assignments = sum(inspection_slot[i, k] for k in period_one_slots)
+            
+            model.Add(total_work_periods == staff_total_assignments[i] + inspection_assignments)
+            
+            # Unassigned periods for this staff member
+            unassigned_periods = model.NewIntVar(-len(self.time_slots), len(self.time_slots), f'unassigned_periods_{i}')
+            model.Add(unassigned_periods == num_available_slots - total_work_periods)
+            
+            # Deviation from the target of 2 unassigned periods
+            deviation = model.NewIntVar(0, len(self.time_slots), f'unassigned_dev_abs_{i}')
+            model.AddAbsEquality(deviation, unassigned_periods - target_unassigned_periods)
+            unassigned_dev_terms.append(deviation)
+
+        # Sum of deviations for all staff
+        total_unassigned_periods_deviation = model.NewIntVar(0, len(staff_ids) * len(self.time_slots), 'total_unassigned_periods_deviation')
+        model.Add(total_unassigned_periods_deviation == sum(unassigned_dev_terms))
 
         #########################################
         # OPTIMIZATION VARIABLES - ENDS HERE
@@ -752,14 +761,28 @@ class Scheduler:
                     if daily_activity_occurrences:
                         model.Add(sum(daily_activity_occurrences) <= 1)
 
+        # Constraint 26: Maximum staffing for activities
+        # Each activity cannot have more staff than its maxStaff allows
+        for j in activity_ids:
+            # Get the max staff for this activity from the activity DataFrame
+            max_staff = self.activity_df.loc[
+                self.activity_df["activityID"] == j,
+                "maxStaff"
+            ].values[0]
+
+            for g in group_ids:
+                for k in self.time_slots:
+                    # The number of staff assigned to an activity cannot exceed max_staff
+                    model.Add(staff_count[j, k, g] <= max_staff)
+
         # OBJECTIVE FUNCTION:
         # Combine all optimization objectives with weights
         
         # Define objective weights from the instance variable
-        w_workload = self.optimization_weights['workload_balance']
         w_staff_diversity = self.optimization_weights['staff_diversity']
         w_group_diversity = self.optimization_weights['group_diversity']
         w_group_weekly_diversity = self.optimization_weights['group_weekly_diversity']
+        w_unassigned_balance = self.optimization_weights['unassigned_periods_balance']
         
         # Build the objective function: 
         # - Minimize workload imbalance 
@@ -769,10 +792,10 @@ class Scheduler:
         
         # Note: CP-SAT can only minimize, so we negate the terms we want to maximize
         model.Minimize(
-            w_workload * total_workload_imbalance + 
             w_staff_diversity * staff_repeated_activities - 
             w_group_diversity * group_category_variety -
-            w_group_weekly_diversity * total_group_weekly_activity_diversity
+            w_group_weekly_diversity * total_group_weekly_activity_diversity +
+            w_unassigned_balance * total_unassigned_periods_deviation
         )
 
         # Solve the constraint programming model
@@ -828,10 +851,10 @@ class Scheduler:
             if hasattr(self, 'optimization_weights') and self.optimization_weights:
                 print("\nOptimization metrics:")
                 # Print optimization values - these variables are in the current scope
-                print(f"- Staff workload imbalance: {solver.Value(total_workload_imbalance)}")
                 print(f"- Staff activity repetitions: {solver.Value(staff_repeated_activities)}")
                 print(f"- Group activity category variety: {solver.Value(group_category_variety)}")
                 print(f"- Group weekly unique activities: {solver.Value(total_group_weekly_activity_diversity)}")
+                print(f"- Staff unassigned periods deviation: {solver.Value(total_unassigned_periods_deviation)}")
                 print(f"- Weighted objective value: {solver.ObjectiveValue()}")
 
         # EXTRACT RESULTS
@@ -989,6 +1012,71 @@ class Scheduler:
         else:
             raise ValueError("No feasible solution found.")
 
+def generate_staff_schedule_csv(schedule_df, staff_df, time_slots, staff_off_time_slots):
+    """
+    Generates a CSV file with schedules broken down by staff member.
+
+    :param schedule_df: DataFrame containing the generated schedule.
+    :param staff_df: DataFrame containing staff information.
+    :param time_slots: List of all time slots in the schedule.
+    :param staff_off_time_slots: Dictionary mapping staff IDs to lists of unavailable time slots.
+    """
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'staff_schedules')
+    os.makedirs(output_dir, exist_ok=True)
+
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    periods = [1, 2, 3]
+    
+    staff_list = staff_df[['staffID', 'staffName']].to_dict('records')
+
+    # Explode schedule_df to handle multiple staff per activity
+    if 'staff' in schedule_df.columns and schedule_df['staff'].apply(lambda x: isinstance(x, list)).any():
+        schedule_df_exploded = schedule_df.explode('staff')
+    else:
+        schedule_df_exploded = schedule_df
+
+    data = []
+    for staff_info in staff_list:
+        staff_id = staff_info['staffID']
+        staff_name = staff_info['staffName']
+        
+        staff_schedule_rows = []
+        
+        # Get staff's off slots
+        off_slots = set(staff_off_time_slots.get(staff_id, []))
+
+        for period in periods:
+            row_data = {'Staff': staff_name if period == 1 else ''}
+            
+            for day in days:
+                time_slot = (day, period)
+                
+                activity = '' # Default to blank
+                if time_slot not in off_slots:
+                    # Find activity for this staff, day, period
+                    activity_series = schedule_df_exploded[
+                        (schedule_df_exploded['staff'] == staff_name) &
+                        (schedule_df_exploded['time_slot'] == time_slot)
+                    ]['activity']
+                    
+                    if not activity_series.empty:
+                        activity = activity_series.iloc[0]
+                
+                row_data[day] = activity
+            staff_schedule_rows.append(row_data)
+        
+        data.extend(staff_schedule_rows)
+        # Add a blank row for line break, matching the requested format
+        data.append({day: '' for day in ['Staff'] + days})
+
+    # Create DataFrame and save to CSV
+    if data:
+        # Remove the last empty row
+        data.pop()
+        staff_schedule_df = pd.DataFrame(data, columns=['Staff'] + days)
+        staff_schedule_df.to_csv(os.path.join(output_dir, "staff_schedule.csv"), index=False)
+
+
 # Main application entry point
 if __name__ == "__main__":
     # Initialize the data manager with the data directory
@@ -1077,10 +1165,10 @@ if __name__ == "__main__":
 
     # Define optimization weights
     optimization_weights = {
-        'workload_balance': 1.0,  # Weight for staff workload balancing
         'staff_diversity': 0.5,   # Weight for staff activity diversity
         'group_diversity': 0.5,   # Weight for group activity category diversity
-        'group_weekly_diversity': 0.5 # Weight for group unique activity diversity per week
+        'group_weekly_diversity': 0.5, # Weight for group unique activity diversity per week
+        'unassigned_periods_balance': 0.75 # Balances unassigned periods for staff
     }
 
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
@@ -1136,12 +1224,16 @@ if __name__ == "__main__":
             sched_matrix.to_csv(os.path.join(output_dir, f"{group_name}_schedule.csv"))
         # --- END NEW ---
         
+        # --- NEW: Save staff schedules as CSV ---
+        generate_staff_schedule_csv(schedule_df.copy(), staff_df, time_slots, staff_off_time_slots)
+        # --- END NEW ---
+
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
         run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, 
                   staff_df, activity_df, leads_mapping, assists_mapping, 
                   waterfront_schedule, inspection_slots, allowed_dr_days,
-                  staff_trips=staff_trips, trips_df=trips_df)
+                  time_slots, staff_trips=staff_trips, trips_df=trips_df)
 
     except ValueError as e:
         print(f"Error: {e}")

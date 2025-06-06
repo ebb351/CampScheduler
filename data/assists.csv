@@ -1,193 +1,286 @@
-staffID,activityID
-1,1
-1,17
-2,1
-2,14
-3,9
-3,20
-4,8
-4,10
-5,18
-5,27
-6,9
-6,13
-7,15
-7,18
-8,27
-8,29
-9,4
-9,15
-10,23
-10,25
-11,13
-11,18
-12,6
-12,12
-13,10
-13,13
-14,21
-15,8
-15,20
-16,3
-16,27
-17,12
-17,16
-18,1
-18,16
-19,17
-19,23
-20,1
-20,19
-21,26
-21,29
-22,5
-22,8
-23,4
-23,16
-24,3
-24,10
-25,1
-25,19
-26,1
-26,29
-27,20
-27,28
-28,23
-28,25
-29,6
-29,9
-30,14
-30,17
-31,2
-31,26
-32,1
-32,12
-33,1
-33,28
-34,4
-34,7
-35,6
-35,11
-36,1
-36,21
-37,22
-37,26
-38,5
-38,15
-39,2
-39,25
-40,7
-40,22
-41,22
-41,24
-42,14
-42,24
-43,19
-43,28
-44,1
-44,24
-45,1
-45,3
-46,7
-46,11
-47,2
-47,3
-48,28
-48,29
-49,8
-49,25
-50,12
-50,21
-51,14
-51,19
-52,5
-52,7
-53,22
-53,26
-35,26
-44,13
-2,12
-41,11
-51,12
-19,8
-30,12
-10,9
-20,9
-33,6
-24,1
-37,9
-1,14
-37,12
-22,20
-36,29
-46,27
-7,4
-46,26
-34,16
-47,1
-16,9
-18,22
-15,4
-13,4
-10,14
-51,9
-53,19
-32,6
-48,23
-9,29
-7,21
-35,15
-9,14
-52,8
-10,28
-26,6
-46,2
-25,2
-37,17
-26,17
-46,28
-7,6
-29,10
-34,21
-32,26
-39,4
-51,4
-19,16
-24,23
-8,3
-43,27
-35,8
-49,20
-37,1
-3,28
-4,25
-23,2
-7,22
-22,28
-12,11
-13,8
-9,16
-1,13
-9,9
-33,18
-30,15
-20,21
-28,5
-47,13
-9,17
-9,21
-18,4
-28,14
-36,27
-9,24
-53,8
-51,2
-42,18
-21,5
-13,15
-18,23
-34,10
-49,27
-44,18
-1,18
-18,6
+staffID,staff name,activityID,activity name
+1,Eli B,1,waterfront
+1,Eli B,17,film studio
+1,Eli B,14,theater
+1,Eli B,13,newcomb
+1,Eli B,18,baseball
+2,Marco M,1,waterfront
+2,Marco M,14,theater
+2,Marco M,12,boxing
+3,"Kendall, M",9,batting cage
+3,"Kendall, M",20,fencing
+3,"Kendall, M",28,newspaper
+4,Ethan F,8,street hockey
+4,Ethan F,10,ceramics
+4,Ethan F,25,volleyball
+5,Rachel S,18,baseball
+5,Rachel S,27,manual arts
+6,Ben C,9,batting cage
+6,Ben C,13,newcomb
+7,Adam S,15,ultimate
+7,Adam S,18,baseball
+7,Adam S,4,golf
+7,Adam S,21,indoor soccer
+7,Adam S,6,arts & crafts
+7,Adam S,22,rocketry
+8,Evan K,27,manual arts
+8,Evan K,29,frolf
+8,Evan K,3,hoops
+9,Ryan S,4,golf
+9,Ryan S,15,ultimate
+9,Ryan S,29,frolf
+9,Ryan S,14,theater
+9,Ryan S,16,weightlifting
+9,Ryan S,9,batting cage
+9,Ryan S,17,film studio
+9,Ryan S,21,indoor soccer
+9,Ryan S,24,the stu
+10,Ben L,23,kickball
+10,Ben L,25,volleyball
+10,Ben L,9,batting cage
+10,Ben L,14,theater
+10,Ben L,28,newspaper
+11,Harry W,13,newcomb
+11,Harry W,18,baseball
+12,Neil G,6,arts & crafts
+12,Neil G,12,boxing
+12,Neil G,11,climbing
+13,Cam M,10,ceramics
+13,Cam M,13,newcomb
+13,Cam M,4,golf
+13,Cam M,8,street hockey
+13,Cam M,15,ultimate
+14,Ben F,21,indoor soccer
+15,Kyle K,8,street hockey
+15,Kyle K,20,fencing
+15,Kyle K,4,golf
+16,Sam P,3,hoops
+16,Sam P,27,manual arts
+16,Sam P,9,batting cage
+17,Matt F,12,boxing
+17,Matt F,16,weightlifting
+18,Eli G,1,waterfront
+18,Eli G,16,weightlifting
+18,Eli G,22,rocketry
+18,Eli G,4,golf
+18,Eli G,23,kickball
+18,Eli G,6,arts & crafts
+19,Jaime G,17,film studio
+19,Jaime G,23,kickball
+19,Jaime G,8,street hockey
+19,Jaime G,16,weightlifting
+20,Oscar L,1,waterfront
+20,Oscar L,19,lacrosse
+20,Oscar L,9,batting cage
+20,Oscar L,21,indoor soccer
+21,Carry C,26,music shack
+21,Carry C,29,frolf
+21,Carry C,5,archery
+22,Jordan A,5,archery
+22,Jordan A,8,street hockey
+22,Jordan A,20,fencing
+22,Jordan A,28,newspaper
+23,Jake M,4,golf
+23,Jake M,16,weightlifting
+23,Jake M,2,tennis
+24,Steve B,3,hoops
+24,Steve B,10,ceramics
+24,Steve B,1,waterfront
+24,Steve B,23,kickball
+25,David B,1,waterfront
+25,David B,19,lacrosse
+25,David B,2,tennis
+26,Travis G,1,waterfront
+26,Travis G,29,frolf
+26,Travis G,6,arts & crafts
+26,Travis G,17,film studio
+27,Trob,20,fencing
+27,Trob,28,newspaper
+28,Beau D,23,kickball
+28,Beau D,25,volleyball
+28,Beau D,5,archery
+28,Beau D,14,theater
+29,Bob S,6,arts & crafts
+29,Bob S,9,batting cage
+29,Bob S,10,ceramics
+30,Jane S,14,theater
+30,Jane S,17,film studio
+30,Jane S,12,boxing
+30,Jane S,15,ultimate
+31,Hugo V,2,tennis
+31,Hugo V,26,music shack
+32,Victor V,1,waterfront
+32,Victor V,12,boxing
+32,Victor V,6,arts & crafts
+32,Victor V,26,music shack
+33,Maxime V,1,waterfront
+33,Maxime V,28,newspaper
+33,Maxime V,6,arts & crafts
+33,Maxime V,18,baseball
+34,Sammy C,4,golf
+34,Sammy C,7,football
+34,Sammy C,16,weightlifting
+34,Sammy C,21,indoor soccer
+34,Sammy C,10,ceramics
+35,Maddie B,6,arts & crafts
+35,Maddie B,11,climbing
+35,Maddie B,26,music shack
+35,Maddie B,15,ultimate
+35,Maddie B,8,street hockey
+36,Elliot K,1,waterfront
+36,Elliot K,21,indoor soccer
+36,Elliot K,29,frolf
+36,Elliot K,27,manual arts
+37,Julian M,22,rocketry
+37,Julian M,26,music shack
+37,Julian M,9,batting cage
+37,Julian M,12,boxing
+37,Julian M,17,film studio
+37,Julian M,1,waterfront
+38,Oliver S,5,archery
+38,Oliver S,15,ultimate
+39,Dash B,2,tennis
+39,Dash B,25,volleyball
+39,Dash B,4,golf
+40,Gordo G,7,football
+40,Gordo G,22,rocketry
+41,Stephen M,22,rocketry
+41,Stephen M,24,the stu
+41,Stephen M,11,climbing
+42,Ryder K,14,theater
+42,Ryder K,24,the stu
+42,Ryder K,18,baseball
+43,Eric P,19,lacrosse
+43,Eric P,28,newspaper
+43,Eric P,27,manual arts
+44,HGH,1,waterfront
+44,HGH,24,the stu
+44,HGH,13,newcomb
+44,HGH,18,baseball
+45,tCap,1,waterfront
+45,tCap,3,hoops
+46,Jordan F,7,football
+46,Jordan F,11,climbing
+46,Jordan F,27,manual arts
+46,Jordan F,26,music shack
+46,Jordan F,2,tennis
+46,Jordan F,28,newspaper
+47,Harry B,2,tennis
+47,Harry B,3,hoops
+47,Harry B,1,waterfront
+47,Harry B,13,newcomb
+48,AJ B,28,newspaper
+48,AJ B,29,frolf
+48,AJ B,23,kickball
+49,RJ S,8,street hockey
+49,RJ S,25,volleyball
+49,RJ S,20,fencing
+49,RJ S,27,manual arts
+50,Danny S,12,boxing
+50,Danny S,21,indoor soccer
+51,Malcolm M,14,theater
+51,Malcolm M,19,lacrosse
+51,Malcolm M,12,boxing
+51,Malcolm M,9,batting cage
+51,Malcolm M,4,golf
+51,Malcolm M,2,tennis
+52,Jared L,5,archery
+52,Jared L,7,football
+52,Jared L,8,street hockey
+53,Tyler L,22,rocketry
+53,Tyler L,26,music shack
+53,Tyler L,19,lacrosse
+53,Tyler L,8,street hockey
+1,Eli B,19,lacrosse
+1,Eli B,20,fencing
+14,Ben F,30,driving range
+20,Oscar L,30,driving range
+41,Stephen M,30,driving range
+1,Eli B,22,rocketry
+2,Marco M,24,the stu
+3,"Kendall, M",6,arts & crafts
+4,Ethan F,5,archery
+5,Rachel S,29,frolf
+6,Ben C,9,batting cage
+7,Adam S,28,newspaper
+8,Evan K,14,theater
+10,Ben L,11,climbing
+11,Harry W,5,archery
+12,Neil G,12,boxing
+14,Ben F,11,climbing
+15,Kyle K,24,the stu
+17,Matt F,16,weightlifting
+18,Eli G,21,indoor soccer
+19,Jaime G,15,ultimate
+20,Oscar L,20,fencing
+21,Carry C,24,the stu
+22,Jordan A,3,hoops
+23,Jake M,22,rocketry
+24,Steve B,24,the stu
+25,David B,6,arts & crafts
+26,Travis G,6,arts & crafts
+27,Trob,8,street hockey
+28,Beau D,6,arts & crafts
+29,Bob S,7,football
+30,Jane S,11,climbing
+31,Hugo V,15,ultimate
+32,Victor V,9,batting cage
+33,Maxime V,14,theater
+34,Sammy C,4,golf
+35,Maddie B,15,ultimate
+36,Elliot K,14,theater
+37,Julian M,5,archery
+38,Oliver S,9,batting cage
+39,Dash B,4,golf
+40,Gordo G,20,fencing
+41,Stephen M,16,weightlifting
+42,Ryder K,18,baseball
+44,HGH,22,rocketry
+45,tCap,13,newcomb
+46,Jordan F,21,indoor soccer
+47,Harry B,3,hoops
+48,AJ B,18,baseball
+49,RJ S,9,batting cage
+1,Eli B,24,the stu
+2,Marco M,29,frolf
+3,"Kendall, M",3,hoops
+4,Ethan F,27,manual arts
+5,Rachel S,14,theater
+6,Ben C,27,manual arts
+7,Adam S,12,boxing
+9,Ryan S,16,weightlifting
+10,Ben L,7,football
+11,Harry W,18,baseball
+12,Neil G,14,theater
+15,Kyle K,12,boxing
+16,Sam P,19,lacrosse
+17,Matt F,18,baseball
+18,Eli G,23,kickball
+19,Jaime G,13,newcomb
+20,Oscar L,24,the stu
+21,Carry C,24,the stu
+22,Jordan A,23,kickball
+23,Jake M,7,football
+24,Steve B,25,volleyball
+25,David B,8,street hockey
+27,Trob,5,archery
+28,Beau D,14,theater
+29,Bob S,13,newcomb
+31,Hugo V,11,climbing
+32,Victor V,19,lacrosse
+33,Maxime V,13,newcomb
+34,Sammy C,14,theater
+35,Maddie B,25,volleyball
+36,Elliot K,27,manual arts
+37,Julian M,24,the stu
+38,Oliver S,23,kickball
+39,Dash B,27,manual arts
+40,Gordo G,5,archery
+41,Stephen M,28,newspaper
+42,Ryder K,11,climbing
+43,Eric P,23,kickball
+44,HGH,6,arts & crafts
+45,tCap,13,newcomb
+47,Harry B,15,ultimate
+48,AJ B,8,street hockey
+49,RJ S,5,archery

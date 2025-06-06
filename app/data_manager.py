@@ -23,6 +23,9 @@ class DataManager:
 
         try:
             df = pd.read_csv(file_path)
+            # Normalize column names to camelCase, stripping whitespace
+            df.columns = [c.strip() for c in df.columns]
+            df.columns = [c[0].lower() + c[1:] if c else c for c in df.columns]
             # print(f"Loaded {file_name} successfully.")
             return df
         except Exception as e:
@@ -67,7 +70,7 @@ class DataManager:
         """
         column_requirements = {
             "staff": ["staffID", "staffName"],
-            "activity": ["activityID", "activityName", "numStaffReq", "duration"],
+            "activity": ["activityID", "activityName", "numStaffReq", "duration", "maxStaff", "category"],
             "certs": ["certID", "certName", "activityID", "numStaffReq"],
             "leads": ["staffID", "activityID"],
             "assists": ["staffID", "activityID"],

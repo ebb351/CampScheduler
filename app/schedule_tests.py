@@ -809,58 +809,59 @@ def test_daily_activity_repetition_for_groups(schedule_df, activity_df):
             })
     return violations
 
-def analyze_staff_workload_distribution(schedule_df, staff_df):
+def test_max_staff_per_activity(schedule_df, activity_df):
     """
-    Analyzes the distribution of activity assignments across staff members.
-    
-    This function calculates the minimum, average, and maximum number of activities 
-    assigned to each staff member, and identifies which staff members have the minimum
-    and maximum assignments.
-    
-    :param schedule_df: DataFrame containing the generated schedule
-    :param staff_df: DataFrame containing staff information
-    :return: Dictionary with summary statistics
+    Tests that the number of staff assigned to an activity does not exceed its maximum limit.
+
+    Each activity has a 'maxStaff' property that defines the maximum number of staff
+    that can be assigned to it at any given time. This test verifies that for every
+    activity in the schedule, the number of assigned staff does not exceed this limit.
+
+    Validates Constraint 26: Maximum staffing for activities.
+
+    :param schedule_df: DataFrame containing the generated schedule.
+    :param activity_df: DataFrame containing activity information, including 'maxStaff'.
+    :return: List of violations, each as a dictionary with details.
     """
-    # Create a normalized copy for analysis
-    analysis_df = schedule_df.copy()
+    violations = []
     
-    # Normalize staff column to individual staff members (in case staff is stored as lists)
-    if analysis_df['staff'].apply(lambda x: isinstance(x, list)).any():
-        analysis_df = analysis_df.explode('staff')
-    
-    # Count assignments per staff member
-    staff_assignments = analysis_df['staff'].value_counts().reset_index()
-    staff_assignments.columns = ['staff_name', 'assignment_count']
-    
-    # Calculate statistics
-    min_assignments = staff_assignments['assignment_count'].min()
-    max_assignments = staff_assignments['assignment_count'].max()
-    avg_assignments = staff_assignments['assignment_count'].mean()
-    
-    # Get staff with min and max assignments
-    min_staff = staff_assignments[staff_assignments['assignment_count'] == min_assignments]['staff_name'].tolist()
-    max_staff = staff_assignments[staff_assignments['assignment_count'] == max_assignments]['staff_name'].tolist()
-    
-    # Print the results
-    print("\n===== STAFF WORKLOAD DISTRIBUTION =====")
-    print(f"Minimum assignments: {min_assignments}")
-    print(f"Staff with minimum assignments ({min_assignments}): {', '.join(min_staff)}")
-    print(f"Average assignments: {avg_assignments:.2f}")
-    print(f"Maximum assignments: {max_assignments}")
-    print(f"Staff with maximum assignments ({max_assignments}): {', '.join(max_staff)}")
-    
-    # Calculate standard deviation to see how evenly distributed the workload is
-    std_dev = staff_assignments['assignment_count'].std()
-    print(f"Standard deviation: {std_dev:.2f} (lower is better - indicates more balanced workload)")
-    
-    return {
-        'min_assignments': min_assignments,
-        'min_staff': min_staff,
-        'avg_assignments': avg_assignments,
-        'max_assignments': max_assignments,
-        'max_staff': max_staff,
-        'std_dev': std_dev
-    }
+    # Create a mapping from activityName to maxStaff for quick lookup
+    activity_max_staff_map = dict(zip(activity_df['activityName'], activity_df['maxStaff']))
+
+    # Group by time_slot, group, and activity to check staff counts for each instance
+    grouped = schedule_df.groupby(['time_slot', 'group', 'activity'], observed=False)
+
+    for (ts, grp, act), sub_df in grouped:
+        # Skip special activities with "NA" group (e.g., inspection)
+        if grp == "NA":
+            continue
+
+        num_staff = sub_df['staff'].nunique()
+        
+        # Get max staff allowed for this activity
+        max_staff_allowed = activity_max_staff_map.get(act)
+        
+        if max_staff_allowed is None:
+            # This case should ideally not happen if data is clean
+            violations.append({
+                "time_slot": ts,
+                "group": grp,
+                "activity": act,
+                "message": f"Activity '{act}' not found in activity_df to check max staff."
+            })
+            continue
+
+        if num_staff > max_staff_allowed:
+            violations.append({
+                "time_slot": ts,
+                "group": grp,
+                "activity": act,
+                "assigned_staff": num_staff,
+                "max_staff_allowed": max_staff_allowed,
+                "message": f"Exceeded max staff limit for '{act}'."
+            })
+
+    return violations
 
 def analyze_staff_activity_diversity(schedule_df, staff_df):
     """
@@ -1108,7 +1109,86 @@ def analyze_group_weekly_activity_diversity(schedule_df, activity_df):
         'group_details': group_diversity_stats
     }
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, staff_trips=None, trips_df=None):
+def analyze_staff_unassigned_periods(schedule_df, staff_df, staff_off_time_slots, staff_trips, time_slots):
+    """
+    Analyzes the number of unassigned periods for each staff member.
+
+    An unassigned period is a time slot where a staff member is available (not on an 
+    off day or a trip) but is not assigned to any activity or inspection. This test
+    helps evaluate how well the schedule utilizes staff time and aims for a balance
+    of work and free time.
+
+    :param schedule_df: DataFrame containing the generated schedule.
+    :param staff_df: DataFrame containing staff information.
+    :param staff_off_time_slots: Dictionary mapping staff IDs to lists of unavailable time slots.
+    :param staff_trips: Dictionary mapping staff IDs to their trip assignments (time_slot, trip_name).
+    :param time_slots: List of all time slots in the schedule.
+    :return: Dictionary with summary statistics.
+    """
+    print("\n===== STAFF UNASSIGNED PERIODS ANALYSIS =====")
+
+    # All staff IDs and their names
+    all_staff = staff_df[['staffID', 'staffName']].to_dict('records')
+
+    unassigned_periods_data = []
+
+    for staff_info in all_staff:
+        staff_id = staff_info['staffID']
+        staff_name = staff_info['staffName']
+
+        # Get staff's off and trip slots
+        off_slots = set(staff_off_time_slots.get(staff_id, []))
+        trip_slots = set(t[0] for t in staff_trips.get(staff_id, []))
+        
+        # Available slots are those where staff is not off or on a trip
+        available_slots = set(time_slots) - off_slots - trip_slots
+        
+        # Get all periods this staff is assigned to in the schedule
+        staff_schedule = schedule_df[schedule_df['staff'] == staff_name]
+        assigned_slots = set(staff_schedule['time_slot'])
+        
+        # Work periods are assigned slots that are not trips
+        work_periods = assigned_slots - trip_slots
+        
+        # Unassigned periods are available slots where staff is not working
+        unassigned_slots = available_slots - work_periods
+        
+        unassigned_periods_data.append({
+            'staff_name': staff_name,
+            'unassigned_periods': len(unassigned_slots)
+        })
+
+    if not unassigned_periods_data:
+        print("No staff data to analyze.")
+        return {}
+
+    # Convert to DataFrame for analysis
+    unassigned_df = pd.DataFrame(unassigned_periods_data)
+
+    # Calculate statistics
+    min_unassigned = unassigned_df['unassigned_periods'].min()
+    max_unassigned = unassigned_df['unassigned_periods'].max()
+    avg_unassigned = unassigned_df['unassigned_periods'].mean()
+
+    # Get staff with min and max unassigned periods
+    min_staff = unassigned_df[unassigned_df['unassigned_periods'] == min_unassigned]['staff_name'].tolist()
+    max_staff = unassigned_df[unassigned_df['unassigned_periods'] == max_unassigned]['staff_name'].tolist()
+
+    print(f"Minimum unassigned periods: {min_unassigned}")
+    print(f"Staff with minimum unassigned periods ({min_unassigned}): {', '.join(min_staff)}")
+    print(f"Average unassigned periods: {avg_unassigned:.2f}")
+    print(f"Maximum unassigned periods: {max_unassigned}")
+    print(f"Staff with maximum unassigned periods ({max_unassigned}): {', '.join(max_staff)}")
+    
+    return {
+        'min_unassigned': min_unassigned,
+        'min_staff': min_staff,
+        'avg_unassigned': avg_unassigned,
+        'max_unassigned': max_unassigned,
+        'max_staff': max_staff
+    }
+
+def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, time_slots, staff_trips=None, trips_df=None):
     """
     Runs all validation tests on the generated schedule and reports the results.
     
@@ -1127,6 +1207,7 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     :param waterfront_schedule: Dictionary mapping group IDs to waterfront time slots
     :param inspection_slots: List of time slots when inspection can be scheduled
     :param allowed_dr_days: List of days when driving range is allowed
+    :param time_slots: List of all time slots in the schedule
     :param staff_trips: Dictionary mapping staff IDs to their trip assignments
     :param trips_df: DataFrame containing trip information
     """
@@ -1147,6 +1228,9 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     
     # Test for daily activity repetition for groups
     daily_activity_repetition_violations = test_daily_activity_repetition_for_groups(schedule_df, activity_df)
+
+    # Test for max staff per activity
+    max_staff_violations = test_max_staff_per_activity(schedule_df, activity_df)
 
     # Run trip-related tests if the data is provided
     trip_assignment_violations = []
@@ -1217,6 +1301,11 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     else:
         print("Daily Activity Repetition for Groups: PASSED")
         
+    if max_staff_violations:
+        print("Max Staff per Activity Violations:", max_staff_violations)
+    else:
+        print("Max Staff per Activity: PASSED")
+        
     # Report trip test results if they were run
     if staff_trips is not None:
         if trip_assignment_violations:
@@ -1239,7 +1328,7 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     print("\n========================================")
     print("SCHEDULE OPTIMIZATION METRICS ANALYSIS")
     print("========================================")
-    analyze_staff_workload_distribution(schedule_df, staff_df)
     analyze_staff_activity_diversity(schedule_df, staff_df)
     analyze_group_category_diversity(schedule_df, activity_df)
     analyze_group_weekly_activity_diversity(schedule_df, activity_df)
+    analyze_staff_unassigned_periods(schedule_df, staff_df, staff_off_time_slots, staff_trips, time_slots)
