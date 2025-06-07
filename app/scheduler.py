@@ -6,6 +6,7 @@ import calendar
 import pandas as pd
 import time
 import os
+from hyperparameters import OPTIMIZATION_WEIGHTS, SOLVER_TIME_LIMIT
 
 def map_dates_to_time_slots(dates):
     """
@@ -802,13 +803,13 @@ class Scheduler:
         solver = cp_model.CpSolver()
         
         # Set a time limit (in seconds) to prevent the solver from running indefinitely
-        solver.parameters.max_time_in_seconds = 600  # 10 minute time limit
+        solver.parameters.max_time_in_seconds = SOLVER_TIME_LIMIT * 60  # Convert to seconds
         
         # Disable detailed logging but show basic progress
         solver.parameters.log_search_progress = False
         
-        print("Solving optimization problem... (this may take a few minutes)")
-        print(f"Time limit set to {solver.parameters.max_time_in_seconds} seconds")
+        print("Solving optimization problem...")
+        print(f"Time limit set to {solver.parameters.max_time_in_seconds/60} minutes")
         
         # Create a simple progress callback
         class SolutionCallback(cp_model.CpSolverSolutionCallback):
@@ -1076,6 +1077,99 @@ def generate_staff_schedule_csv(schedule_df, staff_df, time_slots, staff_off_tim
         staff_schedule_df = pd.DataFrame(data, columns=['Staff'] + days)
         staff_schedule_df.to_csv(os.path.join(output_dir, "staff_schedule.csv"), index=False)
 
+def generate_unassigned_staff_csv(schedule_df, staff_df, time_slots, staff_off_time_slots, staff_trips):
+    """
+    Generates a CSV file showing unassigned staff for each time slot.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param staff_df: DataFrame containing staff information
+    :param time_slots: List of all time slots in the schedule
+    :param staff_off_time_slots: Dictionary mapping staff IDs to lists of unavailable time slots
+    :param staff_trips: Dictionary mapping staff IDs to their trip assignments
+    """
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'staff_schedules')
+    os.makedirs(output_dir, exist_ok=True)
+
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    periods = [1, 2, 3]
+    
+    # Create a DataFrame with periods as rows and days as columns
+    unassigned_df = pd.DataFrame(index=periods, columns=days)
+    
+    # Explode schedule_df to handle multiple staff per activity
+    if 'staff' in schedule_df.columns and schedule_df['staff'].apply(lambda x: isinstance(x, list)).any():
+        schedule_df_exploded = schedule_df.explode('staff')
+    else:
+        schedule_df_exploded = schedule_df
+
+    # For each time slot, find unassigned staff
+    for day in days:
+        for period in periods:
+            time_slot = (day, period)
+            
+            # Get all staff names
+            all_staff = set(staff_df['staffName'].tolist())
+            
+            # Remove staff who are off
+            off_staff = set()
+            for staff_id, off_slots in staff_off_time_slots.items():
+                if time_slot in off_slots:
+                    staff_name = staff_df.loc[staff_df['staffID'] == staff_id, 'staffName'].iloc[0]
+                    off_staff.add(staff_name)
+            
+            # Remove staff who are on trips
+            trip_staff = set()
+            for staff_id, trips in staff_trips.items():
+                if any(slot == time_slot for slot, _ in trips):
+                    staff_name = staff_df.loc[staff_df['staffID'] == staff_id, 'staffName'].iloc[0]
+                    trip_staff.add(staff_name)
+            
+            # Remove staff who are assigned to activities
+            assigned_staff = set(schedule_df_exploded[
+                schedule_df_exploded['time_slot'] == time_slot
+            ]['staff'].tolist())
+            
+            # Calculate unassigned staff
+            unassigned_staff = all_staff - off_staff - trip_staff - assigned_staff
+            
+            # Sort staff names for consistent output
+            unassigned_staff = sorted(list(unassigned_staff))
+            
+            # Join staff names with newlines
+            unassigned_df.at[period, day] = '\n'.join(unassigned_staff) if unassigned_staff else ''
+    
+    # Save to CSV
+    unassigned_df.to_csv(os.path.join(output_dir, "staff_unassigned.csv"))
+
+def generate_group_schedules_csv(schedule_df, group_ids):
+    """
+    Generates CSV files for each group's schedule.
+    
+    :param schedule_df: DataFrame containing the generated schedule
+    :param group_ids: List of group IDs
+    """
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'group_schedules')
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Prepare day and period lists
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    periods = [1, 2, 3]
+    all_groups = group_ids + ["NA"]
+
+    for group in all_groups:
+        # Filter schedule for this group
+        group_sched = schedule_df[schedule_df['group'] == group]
+        # Build a DataFrame with periods as rows, days as columns
+        sched_matrix = pd.DataFrame(index=periods, columns=days)
+        for day in days:
+            for period in periods:
+                # Find all activities for this group, day, period
+                acts = group_sched[(group_sched['time_slot'] == (day, period))]['activity'].tolist()
+                # Join activity names with newlines if multiple
+                sched_matrix.at[period, day] = '\n'.join(acts) if acts else ''
+        # Save to CSV
+        group_name = f"group_{group}" if group != "NA" else "special_NA"
+        sched_matrix.to_csv(os.path.join(output_dir, f"{group_name}_schedule.csv"))
 
 # Main application entry point
 if __name__ == "__main__":
@@ -1164,12 +1258,7 @@ if __name__ == "__main__":
     allowed_dr_days = ["Monday", "Tuesday", "Wednesday", "Thursday"]
 
     # Define optimization weights
-    optimization_weights = {
-        'staff_diversity': 0.5,   # Weight for staff activity diversity
-        'group_diversity': 0.5,   # Weight for group activity category diversity
-        'group_weekly_diversity': 0.5, # Weight for group unique activity diversity per week
-        'unassigned_periods_balance': 0.75 # Balances unassigned periods for staff
-    }
+    optimization_weights = OPTIMIZATION_WEIGHTS  # Use imported weights
 
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
                           staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, 
@@ -1199,34 +1288,10 @@ if __name__ == "__main__":
                         f"Location: {row['location']}"
                     )
 
-        # --- NEW: Save group schedules as CSVs ---
-        output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'group_schedules')
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Prepare day and period lists
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-        periods = [1, 2, 3]
-        all_groups = group_ids + ["NA"]
-
-        for group in all_groups:
-            # Filter schedule for this group
-            group_sched = schedule_df[schedule_df['group'] == group]
-            # Build a DataFrame with periods as rows, days as columns
-            sched_matrix = pd.DataFrame(index=periods, columns=days)
-            for day in days:
-                for period in periods:
-                    # Find all activities for this group, day, period
-                    acts = group_sched[(group_sched['time_slot'] == (day, period))]['activity'].tolist()
-                    # Join activity names with ", " if multiple
-                    sched_matrix.at[period, day] = ', '.join(acts) if acts else ''
-            # Save to CSV
-            group_name = f"group_{group}" if group != "NA" else "special_NA"
-            sched_matrix.to_csv(os.path.join(output_dir, f"{group_name}_schedule.csv"))
-        # --- END NEW ---
-        
-        # --- NEW: Save staff schedules as CSV ---
+        # Generate all schedule CSV files
+        generate_group_schedules_csv(schedule_df.copy(), group_ids)
         generate_staff_schedule_csv(schedule_df.copy(), staff_df, time_slots, staff_off_time_slots)
-        # --- END NEW ---
+        generate_unassigned_staff_csv(schedule_df.copy(), staff_df, time_slots, staff_off_time_slots, staff_trips)
 
         # Run tests on schedule
         schedule_df = schedule_df.explode('staff')
