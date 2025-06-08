@@ -9,5 +9,6 @@ staff_schedules/
 # DS files
 .DS_Store
 
-# cursor files
+# cursor files and project planning files
 .cursor/
+project_doc.md
