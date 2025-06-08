@@ -4,3 +4,7 @@
 
 # generated schedules
 group_schedules/
+staff_schedules/
+
+# DS files
+.DS_Store
