@@ -8,3 +8,6 @@ staff_schedules/
 
 # DS files
 .DS_Store
+
+# cursor files
+.cursor/
