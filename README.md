@@ -1,4 +1,4 @@
-# Camp Schedule Builder v2.0
+# Camp Schedule Builder
 
 A tool to automatically generate camp activity schedules. This guide is for users who are not familiar with programming.
 
