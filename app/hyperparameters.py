@@ -12,4 +12,4 @@ OPTIMIZATION_WEIGHTS = {
 }
 
 # Time limit for the solver in minutes
-SOLVER_TIME_LIMIT = 30
+SOLVER_TIME_LIMIT = 1

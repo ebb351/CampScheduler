@@ -1,28 +1,33 @@
 locID,locName
-1,waterfront
-2,upper courts
-3,middle courts
-4,pooch
-5,lower d
-6,archery range
-7,arts & crafts building
-8,upper d
-9,hockey court
-10,ceramics building
-11,glass tower
-12,buckingham
-13,volleyball court
-14,graphic arts
-15,shuffleboard
-16,gaga court
-17,badminton court
-18,rocketry
-19,manual arts
-20,lodge porch
-21,lodge
-22,stu/library
-23,music shack
-24,office porch
-25,batting cage
-26,theater
-27,driving range
+1,archery range
+2,arts & crafts building room 1
+3,arts & crafts building room 2
+4,badminton court
+5,batting cage
+6,buckingham
+7,ceramics building
+8,driving range
+9,glass tower
+10,graphic arts
+11,hockey court
+12,lodge
+13,lodge porch left
+14,lodge porch right
+15,lower d
+16,manual arts
+17,middle courts
+18,music shack
+19,office porch
+20,pooch
+21,rocketry
+22,shuffleboard
+23,stu/library
+24,theater
+25,upper courts
+26,upper d
+27,volleyball court
+28,waterfront
+29,frolf loc
+30,mountain bike shed
+31,waterski dock
+32,driving range

@@ -1,31 +1,31 @@
-activityID,activityName,numStaffReq,duration,maxStaff,Category
-1,waterfront,4,1,8,fixed
-2,tennis,1,1,3,sports individual
-3,hoops,1,1,3,sports team
-4,golf,1,1,2,sports individual
-5,archery,1,1,2,sports individual
-6,arts & crafts,1,1,2,arts 
-7,football,1,1,2,sports team
-8,street hockey,1,1,2,sports team
-9,batting cage,1,1,1,sports individual
-10,ceramics,1,1,2,arts
-11,climbing,2,1,3,sports individual
-12,boxing,1,1,2,sports individual
-13,newcomb,1,1,2,sports individual
-14,theater,1,1,2,arts 
-15,ultimate,1,1,2,sports team
-16,weightlifting,1,1,2,sports individual
-17,film studio,1,1,2,arts
-18,baseball,1,1,2,sports team
-19,lacrosse,1,1,2,sports team
-20,fencing,1,1,2,skills individual
-21,indoor soccer,1,1,2,sports team
-22,rocketry,1,1,2,arts
-23,kickball,1,1,2,sports team
-24,the stu,1,1,1,arts
-25,volleyball,1,1,2,sports team
-26,music shack,1,1,1,arts
-27,manual arts,2,1,2,arts
-28,newspaper,1,1,2,arts
-29,frolf,1,1,2,sports individual
-30,driving range,1,2,2,sports individual
+activityID,activityName,numStaffReq,duration,maxStaff,category
+1,Archery,1,1,2,sports individual
+2,Arts&Crafts,1,1,2,arts
+3,Baseball,1,1,2,sports team
+4,Basketball,1,1,2,sports team
+5,Batting Cage,1,1,1,sports individual
+6,Boxing,1,1,2,sports individual
+7,Ceramics,1,1,2,arts
+8,Climbing,2,1,3,sports individual
+9,Fencing,1,1,2,sports individual
+10,Film Studio,1,1,2,arts
+11,Football,1,1,2,sports team
+12,Frolf,1,1,2,sports individual
+13,Golf,1,1,2,sports individual
+14,Kickball,1,1,2,sports team
+15,Lacrosse,1,1,2,sports team
+16,Manual Arts,2,1,2,arts
+17,Mountain Biking,1,1,2,sports individual
+18,Music Shack,1,1,1,arts
+19,Newspaper,1,1,2,arts
+20,Rocketry,1,1,2,arts
+21,Soccer,1,1,2,sports team
+22,Street Hockey,1,1,2,sports team
+23,Tennis,1,1,2,sports individual
+24,Theatre,1,1,2,arts
+25,Ultimate,1,1,2,sports team
+26,Volleyball,1,1,2,sports team
+27,Waterskiing,1,1,2,sports individual
+28,Weight lifting,1,1,2,sports individual
+29,waterfront,4,1,8,fixed
+30,Driving Range,2,2,2,sports individual

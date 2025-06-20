@@ -26,6 +26,11 @@ class DataManager:
             # Normalize column names to camelCase, stripping whitespace
             df.columns = [c.strip() for c in df.columns]
             df.columns = [c[0].lower() + c[1:] if c else c for c in df.columns]
+            
+            # Normalize activityName values to lowercase for activity.csv to prevent case sensitivity issues
+            if file_name == "activity.csv" and "activityName" in df.columns:
+                df["activityName"] = df["activityName"].str.lower()
+            
             # print(f"Loaded {file_name} successfully.")
             return df
         except Exception as e:

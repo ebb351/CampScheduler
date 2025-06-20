@@ -1,35 +1,37 @@
-activityID,locID,activityName,locName
-1,1,waterfront,waterfront
-2,2,tennis,upper courts
-2,3,tennis,middle courts
-3,4,hoops,pooch
-4,5,golf,lower d
-5,6,archery,archery range
-6,7,arts & crafts,arts & crafts building
-7,8,football,upper d
-8,9,street hockey,hockey court
-9,25,batting cage,batting cage
-10,10,ceramics,ceramics building
-11,11,climbing,glass tower
-12,12,boxing,buckingham
-13,13,newcomb,volleyball court
-14,26,theater,theater
-15,8,ultimate,upper d
-16,12,weightlifting,buckingham
-17,14,film studio,graphic arts
-18,8,baseball,upper d
-18,5,baseball,lower d
-19,8,lacrosse,upper d
-20,15,fencing,shuffleboard
-21,9,indoor soccer,hockey court
-22,18,rocketry,rocketry
-23,8,kickball,upper d
-24,22,the stu,stu/library
-25,13,volleyball,volleyball court
-26,23,music shack,music shack
-27,19,manual arts,manual arts
-28,20,newspaper,lodge porch
-29,24,frolf,office porch
-15,5,ultimate,lower d
-7,5,football,lower d
-30,27,driving range,driving range
+activityID,activityName,locID,locName
+1,Archery,1,archery range
+2,Arts&Crafts,2,arts & crafts building room 1
+3,Baseball,26,upper d
+3,Baseball,15,lower d
+4,Basketball,20,pooch
+5,Batting Cage,5,batting cage
+6,Boxing,6,buckingham
+7,Ceramics,7,ceramics building
+8,Climbing,9,glass tower
+9,Fencing,22,shuffleboard
+10,Film Studio,23,stu/library
+10,Film Studio,10,graphic arts
+10,Film Studio,19,office porch
+11,Football,26,upper d
+12,Frolf,29,frolf loc
+13,Golf,15,lower d
+14,Kickball,26,upper d
+15,Lacrosse,26,upper d
+16,Manual Arts,16,manual arts
+17,Mountain Biking,30,mountain bike shed
+18,Music Shack,18,music shack
+19,Newspaper,13,lodge porch left
+19,Newspaper,14,lodge porch right
+20,Rocketry,21,rocketry
+21,Soccer,26,upper d
+21,Soccer,15,lower d
+22,Street Hockey,11,hockey court
+23,Tennis,25,upper courts
+24,Theatre,24,theater
+25,Ultimate,26,upper d
+25,Ultimate,15,lower d
+26,Volleyball,27,volleyball court
+27,Waterskiing,31,waterski dock
+28,Weight lifting,6,buckingham
+29,Waterfront,28,waterfront
+30,Driving Range,32,driving range

@@ -1,286 +1,287 @@
-staffID,staff name,activityID,activity name
-1,Eli B,1,waterfront
-1,Eli B,17,film studio
-1,Eli B,14,theater
-1,Eli B,13,newcomb
-1,Eli B,18,baseball
-2,Marco M,1,waterfront
-2,Marco M,14,theater
-2,Marco M,12,boxing
-3,"Kendall, M",9,batting cage
-3,"Kendall, M",20,fencing
-3,"Kendall, M",28,newspaper
-4,Ethan F,8,street hockey
-4,Ethan F,10,ceramics
-4,Ethan F,25,volleyball
-5,Rachel S,18,baseball
-5,Rachel S,27,manual arts
-6,Ben C,9,batting cage
-6,Ben C,13,newcomb
-7,Adam S,15,ultimate
-7,Adam S,18,baseball
-7,Adam S,4,golf
-7,Adam S,21,indoor soccer
-7,Adam S,6,arts & crafts
-7,Adam S,22,rocketry
-8,Evan K,27,manual arts
-8,Evan K,29,frolf
-8,Evan K,3,hoops
-9,Ryan S,4,golf
-9,Ryan S,15,ultimate
-9,Ryan S,29,frolf
-9,Ryan S,14,theater
-9,Ryan S,16,weightlifting
-9,Ryan S,9,batting cage
-9,Ryan S,17,film studio
-9,Ryan S,21,indoor soccer
-9,Ryan S,24,the stu
-10,Ben L,23,kickball
-10,Ben L,25,volleyball
-10,Ben L,9,batting cage
-10,Ben L,14,theater
-10,Ben L,28,newspaper
-11,Harry W,13,newcomb
-11,Harry W,18,baseball
-12,Neil G,6,arts & crafts
-12,Neil G,12,boxing
-12,Neil G,11,climbing
-13,Cam M,10,ceramics
-13,Cam M,13,newcomb
-13,Cam M,4,golf
-13,Cam M,8,street hockey
-13,Cam M,15,ultimate
-14,Ben F,21,indoor soccer
-15,Kyle K,8,street hockey
-15,Kyle K,20,fencing
-15,Kyle K,4,golf
-16,Sam P,3,hoops
-16,Sam P,27,manual arts
-16,Sam P,9,batting cage
-17,Matt F,12,boxing
-17,Matt F,16,weightlifting
-18,Eli G,1,waterfront
-18,Eli G,16,weightlifting
-18,Eli G,22,rocketry
-18,Eli G,4,golf
-18,Eli G,23,kickball
-18,Eli G,6,arts & crafts
-19,Jaime G,17,film studio
-19,Jaime G,23,kickball
-19,Jaime G,8,street hockey
-19,Jaime G,16,weightlifting
-20,Oscar L,1,waterfront
-20,Oscar L,19,lacrosse
-20,Oscar L,9,batting cage
-20,Oscar L,21,indoor soccer
-21,Carry C,26,music shack
-21,Carry C,29,frolf
-21,Carry C,5,archery
-22,Jordan A,5,archery
-22,Jordan A,8,street hockey
-22,Jordan A,20,fencing
-22,Jordan A,28,newspaper
-23,Jake M,4,golf
-23,Jake M,16,weightlifting
-23,Jake M,2,tennis
-24,Steve B,3,hoops
-24,Steve B,10,ceramics
-24,Steve B,1,waterfront
-24,Steve B,23,kickball
-25,David B,1,waterfront
-25,David B,19,lacrosse
-25,David B,2,tennis
-26,Travis G,1,waterfront
-26,Travis G,29,frolf
-26,Travis G,6,arts & crafts
-26,Travis G,17,film studio
-27,Trob,20,fencing
-27,Trob,28,newspaper
-28,Beau D,23,kickball
-28,Beau D,25,volleyball
-28,Beau D,5,archery
-28,Beau D,14,theater
-29,Bob S,6,arts & crafts
-29,Bob S,9,batting cage
-29,Bob S,10,ceramics
-30,Jane S,14,theater
-30,Jane S,17,film studio
-30,Jane S,12,boxing
-30,Jane S,15,ultimate
-31,Hugo V,2,tennis
-31,Hugo V,26,music shack
-32,Victor V,1,waterfront
-32,Victor V,12,boxing
-32,Victor V,6,arts & crafts
-32,Victor V,26,music shack
-33,Maxime V,1,waterfront
-33,Maxime V,28,newspaper
-33,Maxime V,6,arts & crafts
-33,Maxime V,18,baseball
-34,Sammy C,4,golf
-34,Sammy C,7,football
-34,Sammy C,16,weightlifting
-34,Sammy C,21,indoor soccer
-34,Sammy C,10,ceramics
-35,Maddie B,6,arts & crafts
-35,Maddie B,11,climbing
-35,Maddie B,26,music shack
-35,Maddie B,15,ultimate
-35,Maddie B,8,street hockey
-36,Elliot K,1,waterfront
-36,Elliot K,21,indoor soccer
-36,Elliot K,29,frolf
-36,Elliot K,27,manual arts
-37,Julian M,22,rocketry
-37,Julian M,26,music shack
-37,Julian M,9,batting cage
-37,Julian M,12,boxing
-37,Julian M,17,film studio
-37,Julian M,1,waterfront
-38,Oliver S,5,archery
-38,Oliver S,15,ultimate
-39,Dash B,2,tennis
-39,Dash B,25,volleyball
-39,Dash B,4,golf
-40,Gordo G,7,football
-40,Gordo G,22,rocketry
-41,Stephen M,22,rocketry
-41,Stephen M,24,the stu
-41,Stephen M,11,climbing
-42,Ryder K,14,theater
-42,Ryder K,24,the stu
-42,Ryder K,18,baseball
-43,Eric P,19,lacrosse
-43,Eric P,28,newspaper
-43,Eric P,27,manual arts
-44,HGH,1,waterfront
-44,HGH,24,the stu
-44,HGH,13,newcomb
-44,HGH,18,baseball
-45,tCap,1,waterfront
-45,tCap,3,hoops
-46,Jordan F,7,football
-46,Jordan F,11,climbing
-46,Jordan F,27,manual arts
-46,Jordan F,26,music shack
-46,Jordan F,2,tennis
-46,Jordan F,28,newspaper
-47,Harry B,2,tennis
-47,Harry B,3,hoops
-47,Harry B,1,waterfront
-47,Harry B,13,newcomb
-48,AJ B,28,newspaper
-48,AJ B,29,frolf
-48,AJ B,23,kickball
-49,RJ S,8,street hockey
-49,RJ S,25,volleyball
-49,RJ S,20,fencing
-49,RJ S,27,manual arts
-50,Danny S,12,boxing
-50,Danny S,21,indoor soccer
-51,Malcolm M,14,theater
-51,Malcolm M,19,lacrosse
-51,Malcolm M,12,boxing
-51,Malcolm M,9,batting cage
-51,Malcolm M,4,golf
-51,Malcolm M,2,tennis
-52,Jared L,5,archery
-52,Jared L,7,football
-52,Jared L,8,street hockey
-53,Tyler L,22,rocketry
-53,Tyler L,26,music shack
-53,Tyler L,19,lacrosse
-53,Tyler L,8,street hockey
-1,Eli B,19,lacrosse
-1,Eli B,20,fencing
-14,Ben F,30,driving range
-20,Oscar L,30,driving range
-41,Stephen M,30,driving range
-1,Eli B,22,rocketry
-2,Marco M,24,the stu
-3,"Kendall, M",6,arts & crafts
-4,Ethan F,5,archery
-5,Rachel S,29,frolf
-6,Ben C,9,batting cage
-7,Adam S,28,newspaper
-8,Evan K,14,theater
-10,Ben L,11,climbing
-11,Harry W,5,archery
-12,Neil G,12,boxing
-14,Ben F,11,climbing
-15,Kyle K,24,the stu
-17,Matt F,16,weightlifting
-18,Eli G,21,indoor soccer
-19,Jaime G,15,ultimate
-20,Oscar L,20,fencing
-21,Carry C,24,the stu
-22,Jordan A,3,hoops
-23,Jake M,22,rocketry
-24,Steve B,24,the stu
-25,David B,6,arts & crafts
-26,Travis G,6,arts & crafts
-27,Trob,8,street hockey
-28,Beau D,6,arts & crafts
-29,Bob S,7,football
-30,Jane S,11,climbing
-31,Hugo V,15,ultimate
-32,Victor V,9,batting cage
-33,Maxime V,14,theater
-34,Sammy C,4,golf
-35,Maddie B,15,ultimate
-36,Elliot K,14,theater
-37,Julian M,5,archery
-38,Oliver S,9,batting cage
-39,Dash B,4,golf
-40,Gordo G,20,fencing
-41,Stephen M,16,weightlifting
-42,Ryder K,18,baseball
-44,HGH,22,rocketry
-45,tCap,13,newcomb
-46,Jordan F,21,indoor soccer
-47,Harry B,3,hoops
-48,AJ B,18,baseball
-49,RJ S,9,batting cage
-1,Eli B,24,the stu
-2,Marco M,29,frolf
-3,"Kendall, M",3,hoops
-4,Ethan F,27,manual arts
-5,Rachel S,14,theater
-6,Ben C,27,manual arts
-7,Adam S,12,boxing
-9,Ryan S,16,weightlifting
-10,Ben L,7,football
-11,Harry W,18,baseball
-12,Neil G,14,theater
-15,Kyle K,12,boxing
-16,Sam P,19,lacrosse
-17,Matt F,18,baseball
-18,Eli G,23,kickball
-19,Jaime G,13,newcomb
-20,Oscar L,24,the stu
-21,Carry C,24,the stu
-22,Jordan A,23,kickball
-23,Jake M,7,football
-24,Steve B,25,volleyball
-25,David B,8,street hockey
-27,Trob,5,archery
-28,Beau D,14,theater
-29,Bob S,13,newcomb
-31,Hugo V,11,climbing
-32,Victor V,19,lacrosse
-33,Maxime V,13,newcomb
-34,Sammy C,14,theater
-35,Maddie B,25,volleyball
-36,Elliot K,27,manual arts
-37,Julian M,24,the stu
-38,Oliver S,23,kickball
-39,Dash B,27,manual arts
-40,Gordo G,5,archery
-41,Stephen M,28,newspaper
-42,Ryder K,11,climbing
-43,Eric P,23,kickball
-44,HGH,6,arts & crafts
-45,tCap,13,newcomb
-47,Harry B,15,ultimate
-48,AJ B,8,street hockey
-49,RJ S,5,archery
+staffID,activityID,staffName,activityName
+1,4,Abrahim Zafar,Basketball
+1,12,Abrahim Zafar,Frolf
+1,21,Abrahim Zafar,Soccer
+1,25,Abrahim Zafar,Ultimate
+1,17,Abrahim Zafar,Mountain Biking
+1,26,Abrahim Zafar,Volleyball
+2,1,Adrian sztuk,Archery
+2,2,Adrian sztuk,Arts&Crafts
+2,3,Adrian sztuk,Baseball
+2,4,Adrian sztuk,Basketball
+2,5,Adrian sztuk,Batting Cage
+2,6,Adrian sztuk,Boxing
+2,7,Adrian sztuk,Ceramics
+2,8,Adrian sztuk,Climbing
+2,9,Adrian sztuk,Fencing
+2,12,Adrian sztuk,Frolf
+2,14,Adrian sztuk,Kickball
+2,17,Adrian sztuk,Mountain Biking
+2,19,Adrian sztuk,Newspaper
+2,20,Adrian sztuk,Rocketry
+2,21,Adrian sztuk,Soccer
+2,22,Adrian sztuk,Street Hockey
+2,23,Adrian sztuk,Tennis
+2,25,Adrian sztuk,Ultimate
+2,26,Adrian sztuk,Volleyball
+2,28,Adrian sztuk,Weight lifting
+3,3,Ali Al Eid,Baseball
+3,4,Ali Al Eid,Basketball
+3,11,Ali Al Eid,Football
+3,13,Ali Al Eid,Golf
+3,21,Ali Al Eid,Soccer
+3,23,Ali Al Eid,Tennis
+3,25,Ali Al Eid,Ultimate
+3,26,Ali Al Eid,Volleyball
+3,27,Ali Al Eid,Waterskiing
+4,27,Álvaro Martínez Esquinas,Waterskiing
+4,28,Álvaro Martínez Esquinas,Weight lifting
+5,2,Avram Dreyer,Arts&Crafts
+5,7,Avram Dreyer,Ceramics
+5,10,Avram Dreyer,Film Studio
+5,12,Avram Dreyer,Frolf
+5,16,Avram Dreyer,Manual Arts
+5,18,Avram Dreyer,Music Shack
+5,19,Avram Dreyer,Newspaper
+5,20,Avram Dreyer,Rocketry
+5,25,Avram Dreyer,Ultimate
+5,28,Avram Dreyer,Weight lifting
+6,1,Axl Strohm,Archery
+6,2,Axl Strohm,Arts&Crafts
+6,3,Axl Strohm,Baseball
+6,4,Axl Strohm,Basketball
+6,10,Axl Strohm,Film Studio
+6,11,Axl Strohm,Football
+6,12,Axl Strohm,Frolf
+6,14,Axl Strohm,Kickball
+6,17,Axl Strohm,Mountain Biking
+6,19,Axl Strohm,Newspaper
+6,21,Axl Strohm,Soccer
+6,23,Axl Strohm,Tennis
+6,24,Axl Strohm,Theatre
+6,26,Axl Strohm,Volleyball
+7,25,Ben Blender,Ultimate
+7,27,Ben Blender,Waterskiing
+7,3,Ben Blender,Baseball
+7,4,Ben Blender,Basketball
+7,11,Ben Blender,Football
+7,13,Ben Blender,Golf
+7,15,Ben Blender,Lacrosse
+7,22,Ben Blender,Street Hockey
+8,23,Ben Chew,Tennis
+8,25,Ben Chew,Ultimate
+8,28,Ben Chew,Weight lifting
+8,3,Ben Chew,Baseball
+8,4,Ben Chew,Basketball
+8,5,Ben Chew,Batting Cage
+8,7,Ben Chew,Ceramics
+8,11,Ben Chew,Football
+8,14,Ben Chew,Kickball
+8,17,Ben Chew,Mountain Biking
+8,21,Ben Chew,Soccer
+8,26,Ben Chew,Volleyball
+9,2,Chris Hobbs,Arts&Crafts
+9,7,Chris Hobbs,Ceramics
+9,10,Chris Hobbs,Film Studio
+10,2,Claria Desgeorge,Arts&Crafts
+10,8,Claria Desgeorge,Climbing
+10,16,Claria Desgeorge,Manual Arts
+11,4,David Connolly,Basketball
+11,6,David Connolly,Boxing
+11,14,David Connolly,Kickball
+11,22,David Connolly,Street Hockey
+11,27,David Connolly,Waterskiing
+11,28,David Connolly,Weight lifting
+11,3,David Connolly,Baseball
+11,5,David Connolly,Batting Cage
+11,11,David Connolly,Football
+11,13,David Connolly,Golf
+11,17,David Connolly,Mountain Biking
+11,25,David Connolly,Ultimate
+12,11,David Lench,Football
+12,21,David Lench,Soccer
+12,26,David Lench,Volleyball
+12,4,David Lench,Basketball
+12,13,David Lench,Golf
+12,23,David Lench,Tennis
+13,8,Dylan Evans,Climbing
+13,9,Dylan Evans,Fencing
+13,11,Dylan Evans,Football
+13,12,Dylan Evans,Frolf
+13,17,Dylan Evans,Mountain Biking
+13,27,Dylan Evans,Waterskiing
+13,28,Dylan Evans,Weight lifting
+14,4,Eli Norden,Basketball
+14,11,Eli Norden,Football
+14,13,Eli Norden,Golf
+14,19,Eli Norden,Newspaper
+14,21,Eli Norden,Soccer
+14,22,Eli Norden,Street Hockey
+14,23,Eli Norden,Tennis
+14,25,Eli Norden,Ultimate
+14,3,Eli Norden,Baseball
+14,5,Eli Norden,Batting Cage
+14,26,Eli Norden,Volleyball
+14,28,Eli Norden,Weight lifting
+15,2,Eliot Mead,Arts&Crafts
+15,10,Eliot Mead,Film Studio
+15,17,Eliot Mead,Mountain Biking
+15,18,Eliot Mead,Music Shack
+15,19,Eliot Mead,Newspaper
+15,24,Eliot Mead,Theatre
+16,18,Emily,Music Shack
+16,8,Emily,Climbing
+17,2,Eppu Koljonen,Arts&Crafts
+17,6,Eppu Koljonen,Boxing
+17,12,Eppu Koljonen,Frolf
+17,16,Eppu Koljonen,Manual Arts
+17,21,Eppu Koljonen,Soccer
+17,22,Eppu Koljonen,Street Hockey
+17,28,Eppu Koljonen,Weight lifting
+18,21,Finlay Marsh,Soccer
+18,23,Finlay Marsh,Tennis
+18,27,Finlay Marsh,Waterskiing
+19,2,Hari Coles,Arts&Crafts
+19,4,Hari Coles,Basketball
+19,7,Hari Coles,Ceramics
+19,10,Hari Coles,Film Studio
+19,14,Hari Coles,Kickball
+19,16,Hari Coles,Manual Arts
+19,18,Hari Coles,Music Shack
+19,19,Hari Coles,Newspaper
+19,21,Hari Coles,Soccer
+19,22,Hari Coles,Street Hockey
+19,23,Hari Coles,Tennis
+19,24,Hari Coles,Theatre
+19,26,Hari Coles,Volleyball
+20,12,James mcmahon,Frolf
+20,28,James mcmahon,Weight lifting
+20,6,James mcmahon,Boxing
+20,13,James mcmahon,Golf
+21,4,Jamie-Patrick Barr,Basketball
+21,11,Jamie-Patrick Barr,Football
+21,14,Jamie-Patrick Barr,Kickball
+21,23,Jamie-Patrick Barr,Tennis
+21,25,Jamie-Patrick Barr,Ultimate
+21,26,Jamie-Patrick Barr,Volleyball
+21,27,Jamie-Patrick Barr,Waterskiing
+21,28,Jamie-Patrick Barr,Weight lifting
+21,6,Jamie-Patrick Barr,Boxing
+21,13,Jamie-Patrick Barr,Golf
+21,17,Jamie-Patrick Barr,Mountain Biking
+21,21,Jamie-Patrick Barr,Soccer
+22,3,Joshua Whitehead,Baseball
+22,4,Joshua Whitehead,Basketball
+22,21,Joshua Whitehead,Soccer
+22,23,Joshua Whitehead,Tennis
+22,26,Joshua Whitehead,Volleyball
+23,1,Maddie Borovoy,Archery
+23,2,Maddie Borovoy,Arts&Crafts
+23,7,Maddie Borovoy,Ceramics
+23,27,Maddie Borovoy,Waterskiing
+24,4,Matthew Dixon,Basketball
+24,11,Matthew Dixon,Football
+24,12,Matthew Dixon,Frolf
+24,13,Matthew Dixon,Golf
+24,19,Matthew Dixon,Newspaper
+24,21,Matthew Dixon,Soccer
+24,26,Matthew Dixon,Volleyball
+24,27,Matthew Dixon,Waterskiing
+24,28,Matthew Dixon,Weight lifting
+25,4,Milo Servon,Basketball
+25,5,Milo Servon,Batting Cage
+25,3,Milo Servon,Baseball
+25,11,Milo Servon,Football
+25,14,Milo Servon,Kickball
+25,21,Milo Servon,Soccer
+25,26,Milo Servon,Volleyball
+26,1,Morris Stokes,Archery
+26,8,Morris Stokes,Climbing
+26,20,Morris Stokes,Rocketry
+27,3,Nicholas Bruno,Baseball
+27,4,Nicholas Bruno,Basketball
+27,19,Nicholas Bruno,Newspaper
+27,23,Nicholas Bruno,Tennis
+27,25,Nicholas Bruno,Ultimate
+27,26,Nicholas Bruno,Volleyball
+27,11,Nicholas Bruno,Football
+28,23,Rachel Hyde,Tennis
+28,24,Rachel Hyde,Theatre
+28,27,Rachel Hyde,Waterskiing
+28,1,Rachel Hyde,Archery
+28,8,Rachel Hyde,Climbing
+29,3,Rex Naylor,Baseball
+29,4,Rex Naylor,Basketball
+29,5,Rex Naylor,Batting Cage
+29,19,Rex Naylor,Newspaper
+29,21,Rex Naylor,Soccer
+29,22,Rex Naylor,Street Hockey
+29,11,Rex Naylor,Football
+29,12,Rex Naylor,Frolf
+29,14,Rex Naylor,Kickball
+30,2,Sammy Carp,Arts&Crafts
+30,6,Sammy Carp,Boxing
+30,12,Sammy Carp,Frolf
+30,14,Sammy Carp,Kickball
+30,16,Sammy Carp,Manual Arts
+30,25,Sammy Carp,Ultimate
+30,26,Sammy Carp,Volleyball
+30,28,Sammy Carp,Weight lifting
+32,3,Saul Dreyer,Baseball
+32,4,Saul Dreyer,Basketball
+32,7,Saul Dreyer,Ceramics
+32,8,Saul Dreyer,Climbing
+32,11,Saul Dreyer,Football
+32,12,Saul Dreyer,Frolf
+32,13,Saul Dreyer,Golf
+32,14,Saul Dreyer,Kickball
+32,16,Saul Dreyer,Manual Arts
+32,18,Saul Dreyer,Music Shack
+32,20,Saul Dreyer,Rocketry
+32,21,Saul Dreyer,Soccer
+32,22,Saul Dreyer,Street Hockey
+32,23,Saul Dreyer,Tennis
+32,25,Saul Dreyer,Ultimate
+32,26,Saul Dreyer,Volleyball
+32,27,Saul Dreyer,Waterskiing
+32,28,Saul Dreyer,Weight lifting
+33,4,Sean Minshull,Basketball
+33,10,Sean Minshull,Film Studio
+33,8,Sean Minshull,Climbing
+33,21,Sean Minshull,Soccer
+34,2,Sierra Kimble,Arts&Crafts
+34,4,Sierra Kimble,Basketball
+34,6,Sierra Kimble,Boxing
+34,7,Sierra Kimble,Ceramics
+34,12,Sierra Kimble,Frolf
+34,14,Sierra Kimble,Kickball
+34,16,Sierra Kimble,Manual Arts
+34,21,Sierra Kimble,Soccer
+34,23,Sierra Kimble,Tennis
+34,25,Sierra Kimble,Ultimate
+34,26,Sierra Kimble,Volleyball
+34,28,Sierra Kimble,Weight lifting
+35,1,Victor Verhelst,Archery
+35,8,Victor Verhelst,Climbing
+35,12,Victor Verhelst,Frolf
+35,14,Victor Verhelst,Kickball
+35,16,Victor Verhelst,Manual Arts
+35,18,Victor Verhelst,Music Shack
+35,22,Victor Verhelst,Street Hockey
+35,25,Victor Verhelst,Ultimate
+35,26,Victor Verhelst,Volleyball
+36,14,William Sueling,Kickball
+36,12,William Sueling,Frolf
+36,21,William Sueling,Soccer
+36,23,William Sueling,Tennis
+36,25,William Sueling,Ultimate
+37,21,Woody Robinson,Soccer
+37,27,Woody Robinson,Waterskiing
+38,4,Zachary Perlman,Basketball
+38,11,Zachary Perlman,Football
+38,21,Zachary Perlman,Soccer
+38,26,Zachary Perlman,Volleyball
+38,6,Zachary Perlman,Boxing
+38,9,Zachary Perlman,Fencing
+38,12,Zachary Perlman,Frolf
+38,28,Zachary Perlman,Weight lifting

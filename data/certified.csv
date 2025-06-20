@@ -1,20 +1,28 @@
-certID,staffID
-1,1
-2,2
-2,3
-2,4
-3,5
-3,6
-4,7
-4,8
-4,9
-4,10
-4,11
-4,12
-4,13
-4,14
-4,15
-4,16
-4,17
-4,18
-4,19
+certID,certName,staffID,staffName
+1,lifeguard,6,Axl Strohm
+1,lifeguard,7,Ben Blender
+1,lifeguard,11,David Connolly
+1,lifeguard,12,David Lench
+1,lifeguard,13,Dylan Evans
+1,lifeguard,20,James mcmahon
+1,lifeguard,23,Maddie Borovoy
+1,lifeguard,27,Nicholas Bruno
+1,lifeguard,29,Rex Naylor
+1,lifeguard,34,Sierra Kimble
+1,lifeguard,35,Victor Verhelst
+1,lifeguard,36,William Sueling
+3,archery,2,Adrian sztuk
+3,archery,6,Axl Strohm
+3,archery,23,Maddie Borovoy
+3,archery,26,Morris Stokes
+3,archery,28,Rachel Hyde
+3,archery,35,Victor Verhelst
+2,climbing,2,Adrian sztuk
+2,climbing,10,Claria Desgeorge
+2,climbing,13,Dylan Evans
+2,climbing,16,Emily
+2,climbing,26,Morris Stokes
+2,climbing,28,Rachel Hyde
+2,climbing,32,Saul Dreyer
+2,climbing,33,Sean Minshull
+2,climbing,35,Victor Verhelst
