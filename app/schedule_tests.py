@@ -98,7 +98,7 @@ def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group
     
     The schedule has specific rules for how many activities each group should have 
     scheduled in each time slot:
-    1. In waterfront time slots: Exactly 1 activity ('waterfront')
+    1. In waterfront time slots: Exactly 2 activities ('waterfront' and 'Waterskiing')
     2. In golf+tennis time slots: Exactly 2 activities ('golf' and 'tennis')
     3. In all other time slots: Exactly 4 activities
     
@@ -124,13 +124,13 @@ def test_group_activity_count_with_waterfront_and_golf_tennis(schedule_df, group
         # Get distinct activities assigned to this group in this time slot
         distinct_acts = set(sub_df["activity"].drop_duplicates())
 
-        # CASE 1: Check waterfront slots (should be exactly one activity: 'waterfront')
+        # CASE 1: Check waterfront slots (should be exactly two activities: 'waterfront' and 'Waterskiing')
         if ts in waterfront_schedule[grp]:
-            if len(distinct_acts) != 1 or "waterfront" not in distinct_acts:
+            if distinct_acts != {"waterfront", "waterskiing"}:
                 violations.append({
                     "group": grp,
                     "time_slot": ts,
-                    "msg": f"Expected exactly 1 activity='waterfront', found {list(distinct_acts)}"
+                    "msg": f"Expected exactly 2 activities ('waterfront' & 'Waterskiing'), found {list(distinct_acts)}"
                 })
         
         # CASE 2: Check for golf+tennis slots (should be exactly two activities: 'golf' and 'tennis')
@@ -168,19 +168,18 @@ def test_location_activity_match(schedule_df, loc_options_df):
     """
     violations = []
 
-    # Create a set of valid (activityName, locName) pairs from location options data
-    # This is used for fast lookup to check if an activity-location pair is valid
+    # Compare case-insensitively by lower-casing
     valid_pairs = set(
-        zip(loc_options_df["activityName"], loc_options_df["locName"])
+        zip(loc_options_df["activityName"].str.lower(), loc_options_df["locName"].str.lower())
     )
 
     # Check each row in the schedule
     for _, row in schedule_df.iterrows():
-        activity_name = row["activity"]
-        location_name = row["location"]
+        activity_name = str(row["activity"]).lower()
+        location_name = str(row["location"]).lower()
 
         # Skip special activities with placeholder location "NA"
-        if location_name == "NA":
+        if location_name == "na":
             continue
 
         # Check if the activity-location pair is valid

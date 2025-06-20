@@ -102,6 +102,11 @@ class Scheduler:
         ].values[0]
         golf_id = self.activity_df.loc[self.activity_df["activityName"] == "golf", "activityID"].values[0]
         tennis_id = self.activity_df.loc[self.activity_df["activityName"] == "tennis", "activityID"].values[0]
+        # Waterskiing (runs in tandem with waterfront)
+        waterskiing_id = self.activity_df.loc[
+            self.activity_df["activityName"].str.lower() == "waterskiing".lower(),
+            "activityID"
+        ].values[0]
 
         # Create a dictionary to map activity IDs to their categories
         activity_categories = {}
@@ -560,9 +565,11 @@ class Scheduler:
             for k in timeslots:
                 # 1) Must schedule waterfront in these designated slots
                 model.Add(activity_chosen[waterfront_id, k, g] == 1)
-                
-                # 2) No other activities can be scheduled in the waterfront time slot
-                model.Add(sum(activity_chosen[j,k,g] for j in activity_ids) == 1)
+                # Waterskiing must ALSO be scheduled in every waterfront slot
+                model.Add(activity_chosen[waterskiing_id, k, g] == 1)
+
+                # 2) Exactly TWO activities (waterfront + waterskiing) should be present in the slot – no more, no less
+                model.Add(sum(activity_chosen[j,k,g] for j in activity_ids) == 2)
 
         # Constraint 12: Golf and Tennis pairing requirement
         # Golf and Tennis must be scheduled together in the same time slot
@@ -776,6 +783,44 @@ class Scheduler:
                     # The number of staff assigned to an activity cannot exceed max_staff
                     model.Add(staff_count[j, k, g] <= max_staff)
 
+        ##############################################
+        # Constraint 11A: Waterskiing limited to waterfront slots only
+        ##############################################
+        for g in group_ids:
+            for k in self.time_slots:
+                if k not in self.waterfront_schedule.get(g, []):
+                    # Waterskiing cannot be scheduled outside waterfront periods
+                    model.Add(activity_chosen[waterskiing_id, k, g] == 0)
+
+        ##############################################
+        # Constraint 11B: Waterskiing staff daily continuity
+        # If a staff member works waterskiing at any waterfront period in a day,
+        # they must work ALL waterskiing periods that day (across groups).
+        ##############################################
+        days_list_ws = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+
+        # Pre-compute waterfront/waterskiing slots by day for easier reference
+        waterski_slots_by_day = {d: [] for d in days_list_ws}
+        for g_tmp, slots_tmp in self.waterfront_schedule.items():
+            for slot in slots_tmp:
+                waterski_slots_by_day[slot[0]].append((slot, g_tmp))
+
+        # Create helper boolean vars indicating whether a staff member is on waterski duty for a given day
+        waterski_staff_day = {}
+        for i in staff_ids:
+            for d in days_list_ws:
+                waterski_staff_day[i, d] = model.NewBoolVar(f"waterski_staff_day_{i}_{d}")
+
+                slots_pairs = waterski_slots_by_day[d]
+
+                if slots_pairs:
+                    # Link individual waterski period assignments to the day-level boolean
+                    for slot_k, grp_tmp in slots_pairs:
+                        model.Add(staff_assign[i, waterskiing_id, slot_k, grp_tmp] == waterski_staff_day[i, d])
+                else:
+                    # No waterfront on this day – force the boolean to 0
+                    model.Add(waterski_staff_day[i, d] == 0)
+
         # OBJECTIVE FUNCTION:
         # Combine all optimization objectives with weights
         
@@ -825,7 +870,7 @@ class Scheduler:
                 current_time = time.time()
                 obj = self.ObjectiveValue()
                 self._solution_count += 1
-                if self._solution_count % 50 == 0:  # Only print every 50th solution
+                if self._solution_count % 10 == 0:  # Only print every 50th solution
                     print(f"  Solution {self._solution_count} | Objective: {obj} | Time: {current_time - self._start_time:.1f}s")
         
         callback = SolutionCallback()
@@ -1055,13 +1100,20 @@ def generate_staff_schedule_csv(schedule_df, staff_df, time_slots, staff_off_tim
                 activity = '' # Default to blank
                 if time_slot not in off_slots:
                     # Find activity for this staff, day, period
-                    activity_series = schedule_df_exploded[
+                    activity_info = schedule_df_exploded[
                         (schedule_df_exploded['staff'] == staff_name) &
                         (schedule_df_exploded['time_slot'] == time_slot)
-                    ]['activity']
+                    ]
                     
-                    if not activity_series.empty:
-                        activity = activity_series.iloc[0]
+                    if not activity_info.empty:
+                        activity_name = activity_info['activity'].iloc[0]
+                        group = activity_info['group'].iloc[0]
+                        
+                        # Rename volleyball to newcomb for groups 1 and 2
+                        if str(activity_name).lower() == 'volleyball' and group in [1, 2]:
+                            activity = 'newcomb'
+                        else:
+                            activity = activity_name
                 
                 row_data[day] = activity
             staff_schedule_rows.append(row_data)
@@ -1165,6 +1217,13 @@ def generate_group_schedules_csv(schedule_df, group_ids):
             for period in periods:
                 # Find all activities for this group, day, period
                 acts = group_sched[(group_sched['time_slot'] == (day, period))]['activity'].tolist()
+                
+                # Rename volleyball to newcomb for groups 1 and 2
+                if group in [1, 2]:
+                    acts = ['newcomb' if str(act).lower() == 'volleyball' else act for act in acts]
+
+                # Filter out "waterskiing" so it does not appear on group schedules
+                acts = [act for act in acts if str(act).lower() != 'waterskiing']
                 # Join activity names with newlines if multiple
                 sched_matrix.at[period, day] = '\n'.join(acts) if acts else ''
         # Save to CSV

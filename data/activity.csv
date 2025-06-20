@@ -25,7 +25,7 @@ activityID,activityName,numStaffReq,duration,maxStaff,category
 24,Theatre,1,1,2,arts
 25,Ultimate,1,1,2,sports team
 26,Volleyball,1,1,2,sports team
-27,Waterskiing,1,1,2,sports individual
+27,Waterskiing,2,3,3,fixed
 28,Weight lifting,1,1,2,sports individual
 29,waterfront,4,1,8,fixed
 30,Driving Range,2,2,2,sports individual
