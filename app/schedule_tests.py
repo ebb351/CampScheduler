@@ -909,7 +909,7 @@ def analyze_staff_activity_diversity(schedule_df, staff_df):
     # Also report staff with high repetition of the same activity
     print("\nStaff with high activity repetition:")
     staff_activity_counts = analysis_df.groupby(['staff', 'activity']).size().reset_index(name='count')
-    staff_with_repetition = staff_activity_counts[staff_activity_counts['count'] > 4]
+    staff_with_repetition = staff_activity_counts[staff_activity_counts['count'] > 10]
     
     if len(staff_with_repetition) > 0:
         for _, row in staff_with_repetition.sort_values('count', ascending=False).iterrows():
@@ -983,9 +983,7 @@ def analyze_group_category_diversity(schedule_df, activity_df):
         
         # Print the results
         print("\n===== GROUP ACTIVITY CATEGORY DIVERSITY =====")
-        print(f"Average unique categories per group per period: {avg_categories:.2f}")
-        print(f"Minimum categories in a period: {min_categories}")
-        print(f"Maximum categories in a period: {max_categories}")
+        print(f"Average unique categories per group per period (2.11 is best possible): {avg_categories:.2f}")
         
         print("\nCategory diversity by group:")
         for group, group_df in category_df.groupby('group', observed=False):
@@ -1092,11 +1090,6 @@ def analyze_group_weekly_activity_diversity(schedule_df, activity_df):
     # Identify which groups have the minimum and maximum diversity
     min_groups = diversity_df[diversity_df['percentage_diversity'] == min_percentage]['group'].tolist()
     max_groups = diversity_df[diversity_df['percentage_diversity'] == max_percentage]['group'].tolist()
-
-    # Print summary statistics
-    print(f"Minimum weekly activity diversity: {min_percentage:.2f}% (Group(s): {', '.join(map(str, min_groups))})")
-    print(f"Average weekly activity diversity: {avg_percentage:.2f}%")
-    print(f"Maximum weekly activity diversity: {max_percentage:.2f}% (Group(s): {', '.join(map(str, max_groups))})")
     
     # Return comprehensive results dictionary
     return {
@@ -1174,7 +1167,7 @@ def analyze_staff_unassigned_periods(schedule_df, staff_df, staff_off_time_slots
     max_staff = unassigned_df[unassigned_df['unassigned_periods'] == max_unassigned]['staff_name'].tolist()
 
     print(f"Minimum unassigned periods: {min_unassigned}")
-    print(f"Staff with minimum unassigned periods ({min_unassigned}): {', '.join(min_staff)}")
+    print(f"Staff with minimum unassigned periods ({min_unassigned}): {len(min_staff)} staff")
     print(f"Average unassigned periods: {avg_unassigned:.2f}")
     print(f"Maximum unassigned periods: {max_unassigned}")
     print(f"Staff with maximum unassigned periods ({max_unassigned}): {', '.join(max_staff)}")
@@ -1187,7 +1180,72 @@ def analyze_staff_unassigned_periods(schedule_df, staff_df, staff_off_time_slots
         'max_staff': max_staff
     }
 
-def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, time_slots, staff_trips=None, trips_df=None):
+def analyze_lead_priority_assignments(schedule_df, staff_df, activity_df, leads_df):
+    """
+    Analyzes the priority level of staff assigned to lead activities.
+
+    Calculates the average priority of assigned leaders across all activities and
+    identifies activities with an average lead priority below a certain threshold.
+
+    :param schedule_df: DataFrame containing the generated schedule.
+    :param staff_df: DataFrame containing staff information.
+    :param activity_df: DataFrame containing activity information.
+    :param leads_df: DataFrame containing lead qualification and priority.
+    :return: Dictionary with summary statistics.
+    """
+    print("\n===== LEAD PRIORITY ASSIGNMENT ANALYSIS =====")
+
+    if 'priority' not in leads_df.columns:
+        print("  `leads_df` does not contain 'priority' column. Cannot analyze lead priority.")
+        return {}
+
+    # Create a mapping for (staffID, activityID) -> priority
+    lead_priority_map = leads_df.set_index(['staffID', 'activityID'])['priority'].to_dict()
+
+    # Create mappings from names to IDs for merging
+    staff_name_to_id = dict(zip(staff_df['staffName'], staff_df['staffID']))
+    activity_name_to_id = dict(zip(activity_df['activityName'], activity_df['activityID']))
+    
+    analysis_df = schedule_df.copy()
+
+    # Map names to IDs to prepare for priority lookup
+    analysis_df['staffID'] = analysis_df['staff'].map(staff_name_to_id)
+    analysis_df['activityID'] = analysis_df['activity'].map(activity_name_to_id)
+
+    # Remove assignments that couldn't be mapped (e.g., 'inspection', trips)
+    analysis_df.dropna(subset=['staffID', 'activityID'], inplace=True)
+    
+    if analysis_df.empty:
+        print("  No valid lead assignments to analyze.")
+        return {}
+
+    analysis_df['staffID'] = analysis_df['staffID'].astype(int)
+    analysis_df['activityID'] = analysis_df['activityID'].astype(int)
+
+    # Get priority for each assignment, defaulting to 0 if not a lead
+    analysis_df['priority'] = analysis_df.apply(lambda row: lead_priority_map.get((row['staffID'], row['activityID']), 0), axis=1)
+    
+    # --- Overall Average Priority ---
+    average_priority_overall = analysis_df['priority'].mean()
+    print(f"Average priority level across all assignments: {average_priority_overall:.2f}")
+
+    # --- Activities with Low Average Priority ---
+    activity_avg_priority = analysis_df.groupby('activity')['priority'].mean().reset_index()
+    low_priority_activities = activity_avg_priority[activity_avg_priority['priority'] < 2]
+
+    print("\nActivities with average lead priority below 2.0:")
+    if low_priority_activities.empty:
+        print("  None")
+    else:
+        for _, row in low_priority_activities.sort_values(by='priority').iterrows():
+            print(f"  - {row['activity']}: {row['priority']:.2f}")
+            
+    return {
+        'average_priority_overall': average_priority_overall,
+        'low_priority_activities': low_priority_activities.to_dict('records')
+    }
+
+def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, staff_df, activity_df, leads_mapping, assists_mapping, waterfront_schedule, inspection_slots, allowed_dr_days, time_slots, staff_trips=None, trips_df=None, leads_df=None):
     """
     Runs all validation tests on the generated schedule and reports the results.
     
@@ -1209,6 +1267,7 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     :param time_slots: List of all time slots in the schedule
     :param staff_trips: Dictionary mapping staff IDs to their trip assignments
     :param trips_df: DataFrame containing trip information
+    :param leads_df: DataFrame containing lead qualification and priority
     """
 
     print("\n========================================")
@@ -1331,3 +1390,5 @@ def run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots,
     analyze_group_category_diversity(schedule_df, activity_df)
     analyze_group_weekly_activity_diversity(schedule_df, activity_df)
     analyze_staff_unassigned_periods(schedule_df, staff_df, staff_off_time_slots, staff_trips, time_slots)
+    if leads_df is not None:
+        analyze_lead_priority_assignments(schedule_df, staff_df, activity_df, leads_df)

@@ -8,7 +8,8 @@ OPTIMIZATION_WEIGHTS = {
     'staff_diversity': 0.25,   # Weight for staff activity diversity 
     'group_diversity': 0.75,   # Weight for group activity category diversity per period
     'group_weekly_diversity': 0.75, # Weight for group unique activity diversity per week
-    'unassigned_periods_balance': 0.75 # Balances unassigned periods for staff
+    'unassigned_periods_balance': 0.75, # Balances unassigned periods for staff
+    'lead_priority': 0.75 # Weight for prioritizing high-priority lead assignments
 }
 
 # Time limit for the solver in minutes

@@ -77,7 +77,7 @@ class DataManager:
             "staff": ["staffID", "staffName"],
             "activity": ["activityID", "activityName", "numStaffReq", "duration", "maxStaff", "category"],
             "certs": ["certID", "certName", "activityID", "numStaffReq"],
-            "leads": ["staffID", "activityID"],
+            "leads": ["staffID", "activityID", "priority"],
             "assists": ["staffID", "activityID"],
             "certified": ["certID", "staffID"],
             "location": ["locID", "locName"],

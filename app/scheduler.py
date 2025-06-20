@@ -37,7 +37,7 @@ def map_dates_to_time_slots(dates):
 class Scheduler:
     def __init__(self, staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
                  staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, allowed_dr_days, staff_trips,
-                 optimization_weights=None):
+                 optimization_weights=None, leads_priority=None):
         """
         Initialize the Scheduler with all necessary camp data.
         
@@ -56,6 +56,7 @@ class Scheduler:
         :param optimization_weights: Dictionary of weights for optimization objectives
             - staff_diversity: weight for staff activity diversity objective
             - group_diversity: weight for group activity category diversity objective
+        :param leads_priority: Dictionary mapping (staffID, activityID) to priority (0-4)
         """
         self.staff_df = staff_df
         self.activity_df = activity_df
@@ -70,13 +71,17 @@ class Scheduler:
         self.allowed_dr_days = allowed_dr_days
         self.staff_trips = staff_trips
         
+        # Mapping of (staffID, activityID) -> priority (0-4). Defaults to 0 if not provided.
+        self.leads_priority = leads_priority if leads_priority is not None else {}
+        
         # Default optimization weights if none provided
         if optimization_weights is None:
             self.optimization_weights = {
                 'staff_diversity': 0.5,   # Weight for staff activity diversity
                 'group_diversity': 1.0,   # Weight for group activity category diversity
                 'group_weekly_diversity': 0.5, # Weight for group unique activity diversity per week
-                'unassigned_periods_balance': 0.25 # Balances unassigned periods for staff
+                'unassigned_periods_balance': 0.25, # Balances unassigned periods for staff
+                'lead_priority': 1.0 # Weight for prioritizing high-priority lead assignments
             }
         else:
             self.optimization_weights = optimization_weights
@@ -406,6 +411,33 @@ class Scheduler:
         # Sum of deviations for all staff
         total_unassigned_periods_deviation = model.NewIntVar(0, len(staff_ids) * len(self.time_slots), 'total_unassigned_periods_deviation')
         model.Add(total_unassigned_periods_deviation == sum(unassigned_dev_terms))
+
+        # 6. High-Priority Lead Assignments Score
+        # Calculate a score representing how often high-priority lead staff are assigned
+        # to their preferred activities. Each assignment contributes its priority value
+        # (0-4) to the score.
+
+        max_priority_value = 4  # Highest possible priority value
+        max_possible_priority_score = max_priority_value * len(staff_ids) * len(activity_ids) * len(self.time_slots) * len(group_ids)
+
+        total_priority_score = model.NewIntVar(0, max_possible_priority_score, 'total_priority_score')
+
+        # Build linear expression of priority * assignment boolean variables
+        priority_expr_terms = []
+        for i in staff_ids:
+            for j in activity_ids:
+                priority_val = self.leads_priority.get((i, j), 0)
+                if priority_val == 0:
+                    continue  # No contribution if no priority specified
+                for k in self.time_slots:
+                    for g in group_ids:
+                        priority_expr_terms.append(priority_val * staff_assign[i, j, k, g])
+
+        if priority_expr_terms:
+            model.Add(total_priority_score == sum(priority_expr_terms))
+        else:
+            # No priorities specified – force score to zero
+            model.Add(total_priority_score == 0)
 
         #########################################
         # OPTIMIZATION VARIABLES - ENDS HERE
@@ -829,19 +861,55 @@ class Scheduler:
         w_group_diversity = self.optimization_weights['group_diversity']
         w_group_weekly_diversity = self.optimization_weights['group_weekly_diversity']
         w_unassigned_balance = self.optimization_weights['unassigned_periods_balance']
+        w_lead_priority = self.optimization_weights['lead_priority']
         
-        # Build the objective function: 
-        # - Minimize workload imbalance 
-        # - Minimize staff activity repetitions
-        # - Maximize group activity category diversity
-        # - Maximize group unique activity diversity per week
+        # -------------------------------------------------
+        # Normalization factors (denominators) for each
+        # objective component so that every term is scaled
+        # to the 0-1 range before the user defined weight is
+        # applied.  This prevents a large-magnitude raw score
+        # from dominating the combined objective.
+        # -------------------------------------------------
         
-        # Note: CP-SAT can only minimize, so we negate the terms we want to maximize
+        # 1) Staff repeated activity score – worst case is every
+        #    assignment being an excess repeat.
+        max_staff_repeated_possible = len(staff_ids) * len(activity_ids) * max_activity_count
+        
+        # 2) Group category variety – best case equals the total
+        #    number of (group, day, period, category) combinations
+        optim_var_days = list(set(k[0] for k in self.time_slots))
+        optim_var_periods = list(set(k[1] for k in self.time_slots))
+        max_group_category_variety = len(group_ids) * len(optim_var_days) * len(optim_var_periods) * len(optimizable_categories)
+        
+        # 3) Weekly activity diversity per group
+        max_group_weekly_activity_diversity = len(group_ids) * len(activity_ids)
+        
+        # 4) Staff unassigned period deviation – worst case is every
+        #    available period deviates from the 2-period target.
+        max_unassigned_dev = len(staff_ids) * len(self.time_slots)
+        
+        # 5) Priority lead assignment score – best case is every
+        #    possible prioritized assignment is fulfilled.
+        max_priority_score = max_possible_priority_score if 'max_possible_priority_score' in locals() else 0
+        
+        # Guard against divide-by-zero just in case
+        def _safe_div(weight, denom):
+            return (weight / denom) if denom else 0.0
+        
+        norm_w_staff_diversity           = _safe_div(w_staff_diversity, max_staff_repeated_possible)
+        norm_w_group_diversity           = _safe_div(w_group_diversity, max_group_category_variety)
+        norm_w_group_weekly_diversity    = _safe_div(w_group_weekly_diversity, max_group_weekly_activity_diversity)
+        norm_w_unassigned_balance        = _safe_div(w_unassigned_balance, max_unassigned_dev)
+        norm_w_lead_priority             = _safe_div(w_lead_priority, max_priority_score)
+        
+        # Build the normalized objective function.  Remember that
+        # CP-SAT minimises, so we negate terms we wish to *maximise*.
         model.Minimize(
-            w_staff_diversity * staff_repeated_activities - 
-            w_group_diversity * group_category_variety -
-            w_group_weekly_diversity * total_group_weekly_activity_diversity +
-            w_unassigned_balance * total_unassigned_periods_deviation
+            norm_w_staff_diversity * staff_repeated_activities -
+            norm_w_group_diversity * group_category_variety -
+            norm_w_group_weekly_diversity * total_group_weekly_activity_diversity +
+            norm_w_unassigned_balance * total_unassigned_periods_deviation -
+            norm_w_lead_priority * total_priority_score
         )
 
         # Solve the constraint programming model
@@ -901,6 +969,7 @@ class Scheduler:
                 print(f"- Group activity category variety: {solver.Value(group_category_variety)}")
                 print(f"- Group weekly unique activities: {solver.Value(total_group_weekly_activity_diversity)}")
                 print(f"- Staff unassigned periods deviation: {solver.Value(total_unassigned_periods_deviation)}")
+                print(f"- Priority lead assignment score: {solver.Value(total_priority_score)}")
                 print(f"- Weighted objective value: {solver.ObjectiveValue()}")
 
         # EXTRACT RESULTS
@@ -1216,14 +1285,29 @@ def generate_group_schedules_csv(schedule_df, group_ids):
         for day in days:
             for period in periods:
                 # Find all activities for this group, day, period
-                acts = group_sched[(group_sched['time_slot'] == (day, period))]['activity'].tolist()
+                slot_activities = group_sched[group_sched['time_slot'] == (day, period)]
                 
-                # Rename volleyball to newcomb for groups 1 and 2
-                if group in [1, 2]:
-                    acts = ['newcomb' if str(act).lower() == 'volleyball' else act for act in acts]
+                acts = []
+                for _, row in slot_activities.iterrows():
+                    activity_name = row['activity']
+                    location_name = row['location']
 
-                # Filter out "waterskiing" so it does not appear on group schedules
-                acts = [act for act in acts if str(act).lower() != 'waterskiing']
+                    # Rename volleyball to newcomb for groups 1 and 2
+                    if group in [1, 2] and str(activity_name).lower() == 'volleyball':
+                        activity_name = 'newcomb'
+
+                    # Filter out "waterskiing" so it does not appear on group schedules
+                    if str(activity_name).lower() == 'waterskiing':
+                        continue
+                    
+                    # Append location abbreviation for specific locations
+                    if str(location_name).lower() == 'upper d':
+                        activity_name = f"{activity_name} (UD)"
+                    elif str(location_name).lower() == 'lower d' and str(activity_name).lower() != 'golf':
+                        activity_name = f"{activity_name} (LD)"
+                    
+                    acts.append(activity_name)
+
                 # Join activity names with newlines if multiple
                 sched_matrix.at[period, day] = '\n'.join(acts) if acts else ''
         # Save to CSV
@@ -1253,6 +1337,12 @@ if __name__ == "__main__":
     # Create leads and assists mapping
     leads_mapping = leads_df.groupby('staffID')['activityID'].apply(list).to_dict()
     assists_mapping = assists_df.groupby('staffID')['activityID'].apply(list).to_dict()
+
+    # Build lead priority mapping: (staffID, activityID) -> priority (converted to int, default 0)
+    if 'priority' in leads_df.columns:
+        leads_priority = leads_df.set_index(['staffID', 'activityID'])['priority'].fillna(0).astype(int).to_dict()
+    else:
+        leads_priority = {}
 
     # Map dates to time slots for off_days and trips_ooc
     off_days = off_days_df.groupby("staffID")["date"].apply(list).to_dict()
@@ -1321,7 +1411,7 @@ if __name__ == "__main__":
 
     scheduler = Scheduler(staff_df, activity_df, location_df, location_options_df, group_df, time_slots,
                           staff_off_time_slots, leads_mapping, assists_mapping, waterfront_schedule, 
-                          allowed_dr_days, staff_trips, optimization_weights)
+                          allowed_dr_days, staff_trips, optimization_weights, leads_priority)
     try:
         schedule = scheduler.solve()
 
@@ -1357,7 +1447,7 @@ if __name__ == "__main__":
         run_tests(schedule_df, group_ids, location_options_df, staff_off_time_slots, 
                   staff_df, activity_df, leads_mapping, assists_mapping, 
                   waterfront_schedule, inspection_slots, allowed_dr_days,
-                  time_slots, staff_trips=staff_trips, trips_df=trips_df)
+                  time_slots, staff_trips=staff_trips, trips_df=trips_df, leads_df=leads_df)
 
     except ValueError as e:
         print(f"Error: {e}")
