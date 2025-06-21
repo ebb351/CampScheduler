@@ -164,6 +164,20 @@ The CSV files in the `data/` directory are the inputs to the scheduler. Before r
 
 ## Troubleshooting and Upkeep
 
+### Pulling updated code
+Open a terminal, and make sure you are in the root directory of the project. If you are not then run:
+```bash
+cd /path/to/folder/on/your/laptop
+```
+Fetch the latest commits from the remote repository
+```bash
+git fetch origin
+```
+Overwrite all local files
+```bash
+git reset --hard origin/main
+```
+
 ### No solution found (`infeasible`) errors
 The scheduler is very flexible, so these errors are typically caused by the few activity/schedule rules that are not flexible: *waterfront* and *waterskiing* (the only two with many required time slots). Here are likely causes and quick solutions if you encounter this:
 
