@@ -164,6 +164,15 @@ The CSV files in the `data/` directory are the inputs to the scheduler. Before r
 
 ## Troubleshooting and Upkeep
 
+### No solution found (`infeasible`) errors
+The scheduler is very flexible, so these errors are typically caused by the few activity/schedule rules that are not flexible: *waterfront* and *waterskiing* (the only two with many required time slots). Here are likely causes and quick solutions if you encounter this:
+
+- WF requires 4 "leads" (leads = lifeguard, must be in both leads table and certs table), but 4 are not available on some given day due to trips or off days. 
+    -  Reschedule off days or lower the `numStaffRequired` value for waterfront found in `activity.csv`
+- Watersiing requires 1 "leads" and 1 "assists", but 1 is not available (there are only 3 staff who can lead currently) on some given day due to trips or off days. 
+    -  Reschedule off days or move someone from `assists.csv` to `leads.csv` for waterskiing
+- If major changes have been made to any input csvs around these two activities, you may have accidentally removed a crucial dependency (e.g. the waterfront location from `location.csv` was deleted and the scheduler has no location to put waterfront in). 
+
 ### Reverting Accidental Changes
 - **Quick Fix**: If you make a change without meaning to and haven't yet saved the file, you can just close the file in the editor and select "don't save changes".
 - **Otherwise**, If you accidentally change or delete code and things stop working, you can revert all files back to the last clean version you downloaded.
