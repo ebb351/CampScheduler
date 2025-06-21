@@ -17,6 +17,8 @@ In addition to these hard constraints, the scheduler also tries to create the be
 - **Group Activity Category Diversity**: Aims to give each group a diverse mix of activity categories (e.g., sports individual, sports team, arts) in each period
 - **Group Weekly Activity Diversity**: Ensures each group gets to try a variety of different activities throughout the week
 - **Staff Workload Balance**: Attempts to give each staff member approximately 2 unassigned periods per week
+- **Staff Priority Leads**: Attempts to assign higher priority leads staff to activities. 
+    - *You define the priority in the leads CSV. Use scores in range **1 (lowest priorty)** to **4 (highest priority)***
 
 The scheduler will keep searching for a better schedule until it either finds an optimal solution or reaches the maximum time limit (which you can adjust in `hyperparameters.py`).
 
